@@ -2,16 +2,19 @@
 //  ORBApp.swift
 //  ORB
 //
-//  Created by Lokesh Setty Kalakonda on 6/18/26.
+//  Menu-bar agent app. Windows are managed in AppKit via AppDelegate, so the
+//  only SwiftUI scene is Settings (kept empty).
 //
 
 import SwiftUI
 
 @main
 struct ORBApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     var body: some Scene {
-        WindowGroup {
-            ContentView()
+        Settings {
+            EmptyView()
         }
     }
 }
