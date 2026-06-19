@@ -82,8 +82,7 @@ struct DashboardView: View {
             }
             HStack(spacing: 18) {
                 metric(value: m.metric, unit: m.metricLabel, label: "SPEED/LATENCY")
-                metric(value: m.name.contains("Gemma") ? "4.1" : "123",
-                       unit: m.name.contains("Gemma") ? "GB" : "MB", label: ramLabel)
+                metric(value: ramValue(m.ramMB), unit: ramUnit(m.ramMB), label: ramLabel)
             }
             .padding(.top, 12)
         }
@@ -92,6 +91,12 @@ struct DashboardView: View {
         .background(RoundedRectangle(cornerRadius: 12).fill(ORBTheme.card))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(ORBTheme.line))
     }
+
+    private func ramValue(_ mb: Int) -> String {
+        guard mb > 0 else { return "—" }
+        return mb >= 1024 ? String(format: "%.1f", Double(mb) / 1024) : "\(mb)"
+    }
+    private func ramUnit(_ mb: Int) -> String { mb >= 1024 ? "GB" : "MB" }
 
     private func metric(value: String, unit: String, label: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {

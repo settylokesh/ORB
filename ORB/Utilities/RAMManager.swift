@@ -48,11 +48,8 @@ final class RAMManager: ObservableObject {
 
     var isLowMemory: Bool { freeMemoryGB() < 1.0 }
 
+    /// Reflect the real resident footprint of the process for the current phase.
     func setPhase(_ state: AgentState) {
-        switch state {
-        case .idle, .success, .failure: displayedMB = RAMManager.idleMB
-        case .listening:                displayedMB = RAMManager.idleMB + RAMManager.moonshineMB
-        case .planning, .executing:     displayedMB = RAMManager.idleMB + RAMManager.gemmaMB
-        }
+        displayedMB = appResidentMB()
     }
 }

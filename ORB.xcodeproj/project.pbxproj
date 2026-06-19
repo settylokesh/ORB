@@ -6,6 +6,15 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		AD20000000000000000000AA /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = AC20000000000000000000AA /* MLXVLM */; };
+		AD30000000000000000000AA /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = AC30000000000000000000AA /* MLXLMCommon */; };
+		AD40000000000000000000AA /* onnxruntime in Frameworks */ = {isa = PBXBuildFile; productRef = AC40000000000000000000AA /* onnxruntime */; };
+		AD50000000000000000000AA /* MLXHuggingFace in Frameworks */ = {isa = PBXBuildFile; productRef = AC50000000000000000000AA /* MLXHuggingFace */; };
+		AD60000000000000000000AA /* HuggingFace in Frameworks */ = {isa = PBXBuildFile; productRef = AC60000000000000000000AA /* HuggingFace */; };
+		AD70000000000000000000AA /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = AC70000000000000000000AA /* Tokenizers */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		7A9876D32FE4BEBB00BBD6E9 /* ORB.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ORB.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +32,12 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AD20000000000000000000AA /* MLXVLM in Frameworks */,
+				AD30000000000000000000AA /* MLXLMCommon in Frameworks */,
+				AD40000000000000000000AA /* onnxruntime in Frameworks */,
+				AD50000000000000000000AA /* MLXHuggingFace in Frameworks */,
+				AD60000000000000000000AA /* HuggingFace in Frameworks */,
+				AD70000000000000000000AA /* Tokenizers in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +80,12 @@
 			);
 			name = ORB;
 			packageProductDependencies = (
+				AC20000000000000000000AA /* MLXVLM */,
+				AC30000000000000000000AA /* MLXLMCommon */,
+				AC40000000000000000000AA /* onnxruntime */,
+				AC50000000000000000000AA /* MLXHuggingFace */,
+				AC60000000000000000000AA /* HuggingFace */,
+				AC70000000000000000000AA /* Tokenizers */,
 			);
 			productName = ORB;
 			productReference = 7A9876D32FE4BEBB00BBD6E9 /* ORB.app */;
@@ -94,6 +115,12 @@
 			);
 			mainGroup = 7A9876CA2FE4BEBB00BBD6E9;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				AB10000000000000000000AA /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
+				AB20000000000000000000AA /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */,
+				AB30000000000000000000AA /* XCRemoteSwiftPackageReference "swift-huggingface" */,
+				AB40000000000000000000AA /* XCRemoteSwiftPackageReference "swift-transformers" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7A9876D42FE4BEBB00BBD6E9 /* Products */;
 			projectDirPath = "";
@@ -178,7 +205,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -235,7 +262,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
@@ -333,6 +360,74 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		AB10000000000000000000AA /* XCRemoteSwiftPackageReference "mlx-swift-lm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift-lm";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.31.3;
+			};
+		};
+		AB20000000000000000000AA /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/microsoft/onnxruntime-swift-package-manager";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.20.0;
+			};
+		};
+		AB30000000000000000000AA /* XCRemoteSwiftPackageReference "swift-huggingface" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/huggingface/swift-huggingface";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 0.9.0;
+			};
+		};
+		AB40000000000000000000AA /* XCRemoteSwiftPackageReference "swift-transformers" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/huggingface/swift-transformers";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.3.3;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AC20000000000000000000AA /* MLXVLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AB10000000000000000000AA /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXVLM;
+		};
+		AC30000000000000000000AA /* MLXLMCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AB10000000000000000000AA /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXLMCommon;
+		};
+		AC40000000000000000000AA /* onnxruntime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AB20000000000000000000AA /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */;
+			productName = onnxruntime;
+		};
+		AC50000000000000000000AA /* MLXHuggingFace */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AB10000000000000000000AA /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXHuggingFace;
+		};
+		AC60000000000000000000AA /* HuggingFace */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AB30000000000000000000AA /* XCRemoteSwiftPackageReference "swift-huggingface" */;
+			productName = HuggingFace;
+		};
+		AC70000000000000000000AA /* Tokenizers */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AB40000000000000000000AA /* XCRemoteSwiftPackageReference "swift-transformers" */;
+			productName = Tokenizers;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 7A9876CB2FE4BEBB00BBD6E9 /* Project object */;
 }

@@ -103,25 +103,30 @@ struct OnboardingView: View {
             header(5)
             Spacer()
             Text("Getting the AI ready").font(ORBTheme.ui(24, weight: .semibold))
-            Text("Downloaded once, then runs fully offline.")
+            Text("Downloaded once from Hugging Face, then runs fully offline.")
                 .font(ORBTheme.ui(14)).foregroundStyle(ORBTheme.ink2).padding(.top, 10)
             VStack(spacing: 18) {
-                DownloadRow(name: "Moonshine Small", subtitle: "SPEECH-TO-TEXT · 123 MB", progress: 1.0)
-                DownloadRow(name: "Gemma 4 E4B · Q4_K_M", subtitle: "VISION + INTENT · MLX · 4.1 GB", progress: gemmaProgress)
+                DownloadRow(name: "Moonshine Base", subtitle: "SPEECH-TO-TEXT · ONNX",
+                            phase: app.models.moonshine, bytes: app.models.moonshineBytes,
+                            action: { Task { await app.models.downloadMoonshine() } })
+                DownloadRow(name: "Gemma 4 E4B · 4-bit", subtitle: "VISION + INTENT · MLX",
+                            phase: app.models.gemma, bytes: app.models.gemmaBytes,
+                            action: { Task { await app.models.downloadGemma() } })
             }
             .frame(width: 460).padding(.top, 30)
             Spacer()
-            Button(gemmaProgress >= 1 ? "Continue" : "Downloading…") { step = 5 }
-                .buttonStyle(gemmaProgress >= 1 ? AnyButtonStyle(ORBPrimaryButtonStyle()) : AnyButtonStyle(ORBSecondaryButtonStyle()))
-                .frame(width: 240)
-                .disabled(gemmaProgress < 1)
+            Button(app.models.bothReady ? "Continue" : "Download both to continue") { step = 5 }
+                .buttonStyle(app.models.bothReady ? AnyButtonStyle(ORBPrimaryButtonStyle()) : AnyButtonStyle(ORBSecondaryButtonStyle()))
+                .frame(width: 280)
+                .disabled(!app.models.bothReady)
                 .padding(.bottom, 46)
         }
-        .onReceive(Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()) { _ in
-            if gemmaProgress < 1 { gemmaProgress = min(1, gemmaProgress + 0.03) }
+        .onAppear {
+            app.models.refresh()
+            if app.models.moonshine == .notDownloaded { Task { await app.models.downloadMoonshine() } }
+            if app.models.gemma == .notDownloaded { Task { await app.models.downloadGemma() } }
         }
     }
-    @State private var gemmaProgress: Double = 0.12
 
     private var tutorialScreen: some View {
         VStack(spacing: 0) {
@@ -208,35 +213,70 @@ struct OnboardingView: View {
 
 struct DownloadRow: View {
     let name: String, subtitle: String
-    var progress: Double
+    let phase: ModelManager.Phase
+    let bytes: (Int64, Int64)
+    let action: () -> Void
+
+    private var progress: Double { phase.fraction }
+    private var isReady: Bool { phase.isReady }
 
     var body: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 9)
-                        .fill(progress >= 1 ? ORBTheme.success : ORBTheme.accentSoft)
+                        .fill(isReady ? ORBTheme.success : ORBTheme.accentSoft)
                         .frame(width: 34, height: 34)
-                    if progress >= 1 {
+                    switch phase {
+                    case .ready:
                         Image(systemName: "checkmark").foregroundStyle(.white).font(.system(size: 14, weight: .heavy))
-                    } else {
+                    case .downloading:
                         ProgressView().controlSize(.small)
+                    case .failed:
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(ORBTheme.danger).font(.system(size: 13))
+                    case .notDownloaded:
+                        Image(systemName: "arrow.down").foregroundStyle(ORBTheme.accent).font(.system(size: 13, weight: .bold))
                     }
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(ORBTheme.ui(15, weight: .semibold))
-                    Text(subtitle).font(ORBTheme.mono(11)).foregroundStyle(ORBTheme.ink3)
+                    Text(detail).font(ORBTheme.mono(11)).foregroundStyle(ORBTheme.ink3)
                 }
                 Spacer()
-                Text(progress >= 1 ? "DONE" : "\(Int(progress * 100))%")
-                    .font(ORBTheme.mono(12, weight: .semibold))
-                    .foregroundStyle(progress >= 1 ? ORBTheme.success : ORBTheme.accent)
+                trailing
             }
-            ProgressView(value: progress).tint(progress >= 1 ? ORBTheme.success : ORBTheme.accent)
+            ProgressView(value: progress).tint(isReady ? ORBTheme.success : ORBTheme.accent)
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 12).fill(ORBTheme.card))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(ORBTheme.line))
+    }
+
+    @ViewBuilder private var trailing: some View {
+        switch phase {
+        case .ready:
+            Text("DONE").font(ORBTheme.mono(12, weight: .semibold)).foregroundStyle(ORBTheme.success)
+        case .downloading:
+            Text("\(Int(progress * 100))%").font(ORBTheme.mono(12, weight: .semibold)).foregroundStyle(ORBTheme.accent)
+        case .notDownloaded:
+            Button("Download", action: action).buttonStyle(.borderless).font(ORBTheme.ui(12, weight: .semibold)).foregroundStyle(ORBTheme.accent)
+        case .failed:
+            Button("Retry", action: action).buttonStyle(.borderless).font(ORBTheme.ui(12, weight: .semibold)).foregroundStyle(ORBTheme.danger)
+        }
+    }
+
+    private var detail: String {
+        switch phase {
+        case .failed(let msg): return msg.uppercased()
+        case .downloading where bytes.1 > 0:
+            return "\(subtitle) · \(Self.fmt(bytes.0)) / \(Self.fmt(bytes.1))"
+        default: return subtitle
+        }
+    }
+
+    private static func fmt(_ b: Int64) -> String {
+        let mb = Double(b) / 1_048_576
+        return mb >= 1024 ? String(format: "%.1f GB", mb / 1024) : String(format: "%.0f MB", mb)
     }
 }
 

@@ -18,12 +18,24 @@ final class AppState: ObservableObject {
     let history = HistoryStore()
     let permissions = PermissionsManager()
     let ram = RAMManager()
+    let models = ModelManager()
 
-    // Engines (behind protocols — real MLX/Moonshine adapters drop in here)
-    let stt: STTEngine = SimulatedMoonshineSTT()
-    let llm: LLMEngine = SimulatedGemmaEngine()
+    // Real on-device engines (Moonshine via ONNX, Gemma 4 E4B via MLX).
+    let stt: STTEngine
+    let llm: LLMEngine
     private let audio = AudioCaptureEngine()
     private lazy var executor = ActionExecutor(llm: llm)
+
+    private var cancellables = Set<AnyCancellable>()
+
+    init() {
+        stt = MoonshineSTT(models: models)
+        llm = MLXGemmaEngine(models: models)
+        // Re-publish when the model manager changes so download progress is live.
+        models.objectWillChange
+            .sink { [weak self] in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+    }
 
     /// Set by AppDelegate once the overlay window exists.
     weak var glow: GlowBorderControlling?
@@ -50,11 +62,15 @@ final class AppState: ObservableObject {
 
     var gemmaStatus: ModelStatus {
         ModelStatus(name: "Gemma 4 E4B", subtitle: "VISION + INTENT · MLX",
-                    isReady: true, ramMB: RAMManager.gemmaMB, metric: "81", metricLabel: "tok/s")
+                    isReady: models.gemma.isReady, ramMB: llm.ramMB,
+                    metric: llm.lastTokensPerSecond > 0 ? String(format: "%.0f", llm.lastTokensPerSecond) : "—",
+                    metricLabel: "tok/s")
     }
     var moonshineStatus: ModelStatus {
-        ModelStatus(name: "Moonshine Small", subtitle: "SPEECH-TO-TEXT",
-                    isReady: true, ramMB: RAMManager.moonshineMB, metric: "107", metricLabel: "ms")
+        ModelStatus(name: "Moonshine Base", subtitle: "SPEECH-TO-TEXT · ONNX",
+                    isReady: models.moonshine.isReady, ramMB: stt.ramMB,
+                    metric: stt.lastLatencyMS > 0 ? "\(stt.lastLatencyMS)" : "—",
+                    metricLabel: "ms")
     }
 
     // MARK: - Activation
@@ -74,13 +90,17 @@ final class AppState: ObservableObject {
             errorMessage = ORBError.microphoneDenied.errorDescription
             return
         }
+        guard models.moonshine.isReady else {
+            errorMessage = ORBError.modelNotDownloaded("Moonshine").errorDescription
+            return
+        }
         errorMessage = nil
         transcript = ""
         steps = []
         state = .listening
         ram.setPhase(.listening)
 
-        Task { await stt.load() }
+        Task { try? await stt.load() }
         stt.beginStreaming { [weak self] partial in
             self?.transcript = partial
         }
@@ -101,11 +121,21 @@ final class AppState: ObservableObject {
 
     func finalizeListening() {
         guard state == .listening else { return }
+        state = .planning            // claim the transition so re-entry bails
         audio.stop()
         audio.onLevel = nil
-        let finalText = stt.finishStreaming()
-        transcript = finalText
-        runPipeline(transcript: finalText)
+        Task { [weak self] in
+            guard let self else { return }
+            let finalText = await self.stt.finishStreaming()
+            self.transcript = finalText
+            guard !finalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                self.errorMessage = "Didn't catch that — try again."
+                self.state = .idle
+                self.ram.setPhase(.idle)
+                return
+            }
+            self.runPipeline(transcript: finalText)
+        }
     }
 
     func cancel() {
@@ -140,7 +170,16 @@ final class AppState: ObservableObject {
         state = .planning
         ram.setPhase(.planning)
         glow?.set(settings.showGlowBorder ? .planning : .hidden)
-        await llm.load()
+        do {
+            try await llm.load()
+        } catch {
+            errorMessage = ORBError.modelNotDownloaded("Gemma 4 E4B").errorDescription
+            state = .failure
+            glow?.set(.failure)
+            finishCommon()
+            autoReturnToIdle()
+            return
+        }
 
         let screenshot = try? await ScreenReader.capture()
         let intent = await llm.extractIntent(from: transcript, screenshot: screenshot)
@@ -220,7 +259,8 @@ final class AppState: ObservableObject {
     }
 
     private func finishCommon() {
-        llm.unload()
+        // Keep Gemma resident between commands for responsiveness; MLX reloads
+        // from cache are non-trivial. RAM is reported live on the dashboard.
         ram.setPhase(.idle)
     }
 
