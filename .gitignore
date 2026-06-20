@@ -1,0 +1,36 @@
+# ───────────────────────────── macOS ─────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# ───────────────────────────── Xcode ─────────────────────────────
+## User-specific Xcode state (window layout, breakpoints, selected scheme…)
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad
+
+## Build products & intermediates
+build/
+DerivedData/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+## Playground / misc
+timeline.xctimeline
+playground.xcworkspace
+
+# ──────────────────── Swift Package Manager ───────────────────────
+# NOTE: Package.resolved (under ORB.xcodeproj/.../xcshareddata/swiftpm/)
+# is intentionally NOT ignored — it pins exact dependency versions so a
+# fresh clone resolves reproducibly.
+.build/
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+.netrc
+
+# ──────────────────────── Claude Code ─────────────────────────────
+.claude/
