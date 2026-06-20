@@ -31,13 +31,26 @@ final class PermissionsManager: ObservableObject {
     }
 
     private var pollTimer: Timer?
+    private var activeObserver: NSObjectProtocol?
 
     init() {
         refresh()
         startMonitoring()
+        // The moment the user switches back to ORB (e.g. after toggling a
+        // permission in System Settings), re-check immediately instead of
+        // waiting up to 2s for the poll — so it stops saying "Needed" at once.
+        activeObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in self.refresh() }
+        }
     }
 
-    deinit { pollTimer?.invalidate() }
+    deinit {
+        pollTimer?.invalidate()
+        if let activeObserver { NotificationCenter.default.removeObserver(activeObserver) }
+    }
 
     /// Poll the live permission state so grants made while ORB is running are
     /// picked up automatically (no need to click Refresh or relaunch).

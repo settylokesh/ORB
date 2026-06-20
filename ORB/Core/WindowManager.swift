@@ -68,6 +68,14 @@ final class WindowManager {
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
             window.isReleasedWhenClosed = false
+            // Onboarding walks the user through System Settings to grant
+            // permissions. Float above other apps (incl. System Settings) and
+            // follow the active Space so the instructions never get buried —
+            // otherwise opening Settings sends ORB to the back and the user has
+            // to hunt for the menu-bar icon to bring it forward again.
+            window.level = .floating
+            window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+            window.hidesOnDeactivate = false
             window.center()
             onboardingWindow = window
         }

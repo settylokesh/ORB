@@ -303,6 +303,7 @@ final class ModelManager: ObservableObject {
     /// Cancels any in-flight downloads and re-checks what's present in the new spot.
     func setModelsFolder(_ url: URL?) {
         moonshineTask?.cancel(); gemmaTask?.cancel()
+        moonshineDownloader?.invalidate(); gemmaDownloader?.invalidate()
         moonshineDownloader = nil; gemmaDownloader = nil
         gemmaContainer = nil
         if let url { UserDefaults.standard.set(url.path, forKey: Self.folderKey) }
@@ -315,6 +316,7 @@ final class ModelManager: ObservableObject {
     /// Delete every downloaded model and reset state (frees the whole folder).
     func deleteAllModels() {
         moonshineTask?.cancel(); gemmaTask?.cancel()
+        moonshineDownloader?.invalidate(); gemmaDownloader?.invalidate()
         moonshineDownloader = nil; gemmaDownloader = nil
         gemmaContainer = nil
         try? FileManager.default.removeItem(at: moonshineDir)
