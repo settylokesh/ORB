@@ -38,10 +38,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appState.models.refresh()
         appState.permissions.refresh()
 
-        // Show the setup flow on first run, or whenever the models the app needs
-        // aren't actually installed yet — so the user is never dropped into a
-        // dashboard that silently can't do anything.
-        if !appState.settings.hasOnboarded || !appState.models.bothReady {
+        // Show the welcome / setup flow only the first time the app is opened.
+        // On every later launch go straight to the dashboard — models and
+        // permissions can be managed there, so we never re-show onboarding.
+        if !appState.settings.hasOnboarded {
             windowManager.showOnboarding()
         } else {
             windowManager.showMain(tab: .dashboard)

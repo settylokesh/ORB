@@ -107,6 +107,7 @@ final class StatusBarController {
         switch phase {
         case .ready: return "Ready"
         case .downloading(let f): return "Downloading \(Int(f * 100))%"
+        case .paused(let f): return "Paused \(Int(f * 100))%"
         case .failed: return "Failed"
         case .notDownloaded: return "Not installed"
         }

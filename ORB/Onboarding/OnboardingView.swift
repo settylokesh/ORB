@@ -108,24 +108,29 @@ struct OnboardingView: View {
             VStack(spacing: 18) {
                 DownloadRow(name: "Moonshine Base", subtitle: "SPEECH-TO-TEXT · ONNX",
                             phase: app.models.moonshine, bytes: app.models.moonshineBytes,
-                            action: { Task { await app.models.downloadMoonshine() } })
+                            download: { app.models.downloadMoonshine() },
+                            pause: { app.models.pauseMoonshine() },
+                            resume: { app.models.resumeMoonshine() })
                 DownloadRow(name: "Gemma 4 E4B · 4-bit", subtitle: "VISION + INTENT · MLX",
                             phase: app.models.gemma, bytes: app.models.gemmaBytes,
-                            action: { Task { await app.models.downloadGemma() } })
+                            download: { app.models.downloadGemma() },
+                            pause: { app.models.pauseGemma() },
+                            resume: { app.models.resumeGemma() })
             }
             .frame(width: 460).padding(.top, 30)
             Spacer()
-            Button(app.models.bothReady ? "Continue" : "Download both to continue") { step = 5 }
-                .buttonStyle(app.models.bothReady ? AnyButtonStyle(ORBPrimaryButtonStyle()) : AnyButtonStyle(ORBSecondaryButtonStyle()))
-                .frame(width: 280)
-                .disabled(!app.models.bothReady)
-                .padding(.bottom, 46)
+            VStack(spacing: 10) {
+                Button(app.models.bothReady ? "Continue" : "Continue without models") { step = 5 }
+                    .buttonStyle(app.models.bothReady ? AnyButtonStyle(ORBPrimaryButtonStyle()) : AnyButtonStyle(ORBSecondaryButtonStyle()))
+                    .frame(width: 280)
+                if !app.models.bothReady {
+                    Text("You can download or finish these later from the Dashboard.")
+                        .font(ORBTheme.mono(10)).foregroundStyle(ORBTheme.ink3)
+                }
+            }
+            .padding(.bottom, 46)
         }
-        .onAppear {
-            app.models.refresh()
-            if app.models.moonshine == .notDownloaded { Task { await app.models.downloadMoonshine() } }
-            if app.models.gemma == .notDownloaded { Task { await app.models.downloadGemma() } }
-        }
+        .onAppear { app.models.refresh() }
     }
 
     private var tutorialScreen: some View {
@@ -215,7 +220,9 @@ struct DownloadRow: View {
     let name: String, subtitle: String
     let phase: ModelManager.Phase
     let bytes: (Int64, Int64)
-    let action: () -> Void
+    let download: () -> Void
+    let pause: () -> Void
+    let resume: () -> Void
 
     private var progress: Double { phase.fraction }
     private var isReady: Bool { phase.isReady }
@@ -232,6 +239,8 @@ struct DownloadRow: View {
                         Image(systemName: "checkmark").foregroundStyle(.white).font(.system(size: 14, weight: .heavy))
                     case .downloading:
                         ProgressView().controlSize(.small)
+                    case .paused:
+                        Image(systemName: "pause.fill").foregroundStyle(ORBTheme.ink3).font(.system(size: 13))
                     case .failed:
                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(ORBTheme.danger).font(.system(size: 13))
                     case .notDownloaded:
@@ -257,11 +266,21 @@ struct DownloadRow: View {
         case .ready:
             Text("DONE").font(ORBTheme.mono(12, weight: .semibold)).foregroundStyle(ORBTheme.success)
         case .downloading:
-            Text("\(Int(progress * 100))%").font(ORBTheme.mono(12, weight: .semibold)).foregroundStyle(ORBTheme.accent)
+            HStack(spacing: 10) {
+                Text("\(Int(progress * 100))%").font(ORBTheme.mono(12, weight: .semibold)).foregroundStyle(ORBTheme.accent)
+                Button("Pause", action: pause).buttonStyle(.borderless)
+                    .font(ORBTheme.ui(12, weight: .semibold)).foregroundStyle(ORBTheme.accent)
+            }
+        case .paused:
+            HStack(spacing: 10) {
+                Text("\(Int(progress * 100))%").font(ORBTheme.mono(12, weight: .semibold)).foregroundStyle(ORBTheme.ink3)
+                Button("Resume", action: resume).buttonStyle(.borderless)
+                    .font(ORBTheme.ui(12, weight: .semibold)).foregroundStyle(ORBTheme.accent)
+            }
         case .notDownloaded:
-            Button("Download", action: action).buttonStyle(.borderless).font(ORBTheme.ui(12, weight: .semibold)).foregroundStyle(ORBTheme.accent)
+            Button("Download", action: download).buttonStyle(.borderless).font(ORBTheme.ui(12, weight: .semibold)).foregroundStyle(ORBTheme.accent)
         case .failed:
-            Button("Retry", action: action).buttonStyle(.borderless).font(ORBTheme.ui(12, weight: .semibold)).foregroundStyle(ORBTheme.danger)
+            Button("Retry", action: download).buttonStyle(.borderless).font(ORBTheme.ui(12, weight: .semibold)).foregroundStyle(ORBTheme.danger)
         }
     }
 
@@ -270,6 +289,8 @@ struct DownloadRow: View {
         case .failed(let msg): return msg.uppercased()
         case .downloading where bytes.1 > 0:
             return "\(subtitle) · \(Self.fmt(bytes.0)) / \(Self.fmt(bytes.1))"
+        case .paused where bytes.1 > 0:
+            return "PAUSED · \(Self.fmt(bytes.0)) / \(Self.fmt(bytes.1))"
         default: return subtitle
         }
     }

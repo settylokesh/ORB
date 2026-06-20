@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct SettingsView: View {
     @EnvironmentObject private var settings: SettingsStore
@@ -77,18 +78,33 @@ struct SettingsView: View {
     private var storageCard: some View {
         SettingsCard(title: "MODEL STORAGE") {
             VStack(alignment: .leading, spacing: 10) {
-                Text("All models live in one folder you can inspect, back up or delete.")
+                Text("All models live in one folder you can inspect, back up or relocate.")
                     .font(ORBTheme.ui(12.5)).foregroundStyle(ORBTheme.ink2)
                 HStack(spacing: 8) {
                     Image(systemName: "folder.fill").foregroundStyle(ORBTheme.accent)
                     Text(app.models.modelsRoot.path)
                         .font(ORBTheme.mono(10.5)).foregroundStyle(ORBTheme.ink2)
                         .lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 0)
+                    Text(app.models.isUsingDefaultFolder ? "DEFAULT" : "CUSTOM")
+                        .font(ORBTheme.mono(9, weight: .semibold)).foregroundStyle(ORBTheme.ink3)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Capsule().fill(ORBTheme.board))
                 }
                 .padding(.horizontal, 12).padding(.vertical, 9)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color(hex: "F4F2EE")))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(ORBTheme.line))
+
+                HStack(spacing: 10) {
+                    Button("Change…") { chooseModelsFolder() }
+                        .buttonStyle(ORBSecondaryButtonStyle())
+                    if !app.models.isUsingDefaultFolder {
+                        Button("Reset to default") { app.models.setModelsFolder(nil) }
+                            .buttonStyle(.plain)
+                            .font(ORBTheme.ui(13, weight: .semibold)).foregroundStyle(ORBTheme.accent)
+                    }
+                }
             }
             .padding(.horizontal, 16).padding(.vertical, 11)
 
@@ -111,6 +127,25 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This removes Moonshine and Gemma from disk. You'll need to download them again before ORB can run commands.")
+        }
+    }
+
+    /// Let the user pick a new folder for model storage. Existing downloads stay
+    /// where they are; future downloads go to the new location.
+    private func chooseModelsFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Use Folder"
+        panel.message = "Choose where ORB should store its models."
+        panel.directoryURL = app.models.modelsRoot
+        if panel.runModal() == .OK, let url = panel.url {
+            // Store models inside an "ORB Models" subfolder of the chosen directory.
+            let target = url.appendingPathComponent("ORB Models", isDirectory: true)
+            try? FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+            app.models.setModelsFolder(target)
         }
     }
 

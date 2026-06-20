@@ -47,11 +47,15 @@ struct DashboardView: View {
                 // Model cards
                 HStack(spacing: 14) {
                     modelCard(app.gemmaStatus, phase: app.models.gemma,
-                              bytes: app.models.gemmaBytes, approxSize: "~4.3 GB",
-                              action: { Task { await app.models.downloadGemma() } })
+                              bytes: app.models.gemmaBytes, approxSize: "~4.9 GB",
+                              download: { app.models.downloadGemma() },
+                              pause: { app.models.pauseGemma() },
+                              resume: { app.models.resumeGemma() })
                     modelCard(app.moonshineStatus, phase: app.models.moonshine,
-                              bytes: app.models.moonshineBytes, approxSize: "~190 MB",
-                              action: { Task { await app.models.downloadMoonshine() } })
+                              bytes: app.models.moonshineBytes, approxSize: "~390 MB",
+                              download: { app.models.downloadMoonshine() },
+                              pause: { app.models.pauseMoonshine() },
+                              resume: { app.models.resumeMoonshine() })
                 }
                 .padding(.top, 22)
 
@@ -80,7 +84,9 @@ struct DashboardView: View {
     @ViewBuilder
     private func modelCard(_ m: ModelStatus, phase: ModelManager.Phase,
                            bytes: (Int64, Int64), approxSize: String,
-                           action: @escaping () -> Void) -> some View {
+                           download: @escaping () -> Void,
+                           pause: @escaping () -> Void,
+                           resume: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text(m.name).font(ORBTheme.ui(14, weight: .semibold))
@@ -93,27 +99,46 @@ struct DashboardView: View {
             }
             .padding(.top, 12)
 
-            // Install / progress / retry affordance when the model isn't ready.
+            // Install / progress / pause / resume affordance when not ready.
             switch phase {
             case .ready:
                 EmptyView()
             case .downloading(let f):
                 VStack(alignment: .leading, spacing: 6) {
                     ProgressView(value: f).tint(ORBTheme.accent)
-                    Text(bytes.1 > 0 ? "\(Self.fmt(bytes.0)) / \(Self.fmt(bytes.1))" : "Downloading…")
-                        .font(ORBTheme.mono(10)).foregroundStyle(ORBTheme.ink3)
+                    HStack {
+                        Text(bytes.1 > 0 ? "\(Self.fmt(bytes.0)) / \(Self.fmt(bytes.1))" : "Downloading…")
+                            .font(ORBTheme.mono(10)).foregroundStyle(ORBTheme.ink3)
+                        Spacer()
+                        Button("Pause", action: pause)
+                            .buttonStyle(.plain)
+                            .font(ORBTheme.ui(12, weight: .semibold)).foregroundStyle(ORBTheme.accent)
+                    }
+                }
+                .padding(.top, 12)
+            case .paused(let f):
+                VStack(alignment: .leading, spacing: 6) {
+                    ProgressView(value: f).tint(ORBTheme.ink3)
+                    HStack {
+                        Text("Paused · \(Self.fmt(bytes.0)) / \(Self.fmt(bytes.1))")
+                            .font(ORBTheme.mono(10)).foregroundStyle(ORBTheme.ink3)
+                        Spacer()
+                        Button("Resume", action: resume)
+                            .buttonStyle(.plain)
+                            .font(ORBTheme.ui(12, weight: .semibold)).foregroundStyle(ORBTheme.accent)
+                    }
                 }
                 .padding(.top, 12)
             case .notDownloaded:
                 HStack {
-                    Button("Download", action: action).buttonStyle(ORBPrimaryButtonStyle())
+                    Button("Download", action: download).buttonStyle(ORBPrimaryButtonStyle())
                     Text(approxSize).font(ORBTheme.mono(11)).foregroundStyle(ORBTheme.ink3)
                 }
                 .padding(.top, 12)
             case .failed(let msg):
                 VStack(alignment: .leading, spacing: 6) {
                     Text(msg).font(ORBTheme.mono(10)).foregroundStyle(ORBTheme.danger).lineLimit(2)
-                    Button("Retry", action: action).buttonStyle(ORBPrimaryButtonStyle())
+                    Button("Retry", action: download).buttonStyle(ORBPrimaryButtonStyle())
                 }
                 .padding(.top, 12)
             }
@@ -133,6 +158,7 @@ struct DashboardView: View {
         switch phase {
         case .ready: return "READY"
         case .downloading(let f): return "\(Int(f * 100))%"
+        case .paused(let f): return "PAUSED \(Int(f * 100))%"
         case .failed: return "FAILED"
         case .notDownloaded: return "NOT INSTALLED"
         }
