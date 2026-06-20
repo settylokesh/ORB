@@ -1,15 +1,17 @@
 <div align="center">
 
+<img src=".github/assets/orb-logo.png" alt="ORB logo" width="172" height="172" />
+
 # ORB
 
 ### A fully on-device voice agent for macOS that hears you, sees your screen, and operates your Mac.
 
-[![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-black?logo=apple)](https://www.apple.com/macos)
-[![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-required-blue?logo=apple)](https://support.apple.com/en-us/116943)
-[![Swift](https://img.shields.io/badge/Swift-5-orange?logo=swift)](https://swift.org)
-[![UI](https://img.shields.io/badge/UI-SwiftUI%20%2B%20AppKit-1575F9?logo=swift)](https://developer.apple.com/xcode/swiftui/)
-[![On-device](https://img.shields.io/badge/inference-100%25%20on--device-success?logo=apple)](#privacy--security)
-[![Status](https://img.shields.io/badge/status-v1.0-brightgreen)](#roadmap)
+[![Platform](https://img.shields.io/badge/macOS-14%2B-1a1a1a?style=flat-square&logo=apple&logoColor=white)](https://www.apple.com/macos)
+[![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-required-FF5E1A?style=flat-square&logo=apple&logoColor=white)](https://support.apple.com/en-us/116943)
+[![Swift](https://img.shields.io/badge/Swift-5-F05138?style=flat-square&logo=swift&logoColor=white)](https://swift.org)
+[![UI](https://img.shields.io/badge/SwiftUI%20+%20AppKit-1575F9?style=flat-square&logo=swift&logoColor=white)](https://developer.apple.com/xcode/swiftui/)
+[![On-device](https://img.shields.io/badge/inference-100%25%20on--device-2EA043?style=flat-square&logo=apple&logoColor=white)](#privacy--security)
+[![Status](https://img.shields.io/badge/status-v1.0-FF5E1A?style=flat-square)](#roadmap)
 
 Press a key, speak a command, and watch ORB plan and carry it out — opening apps,
 clicking, typing, finding files and driving your Mac — **without a single byte
@@ -371,8 +373,14 @@ is added, all rights are reserved by the author.
 - [ONNX Runtime](https://onnxruntime.ai)
 - [Hugging Face](https://huggingface.co) `swift-transformers` & `swift-huggingface`
 
+<br />
+
 <div align="center">
 
+<img src=".github/assets/orb-logo.png" alt="ORB" width="64" height="64" />
+
 **ORB** — your Mac, by voice. On-device. Private. Yours.
+
+<sub>Built with Swift, MLX & ONNX Runtime · © 2026 Lokesh Setty</sub>
 
 </div>
