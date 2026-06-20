@@ -41,7 +41,9 @@ final class SettingsStore: ObservableObject {
 
     init() {
         let d = UserDefaults.standard
-        hotkeyDisplay         = d.string(forKey: "hotkeyDisplay") ?? "⌘ Space"
+        // Migrate the old ⌘Space default to the current ⌘L hotkey.
+        let storedHotkey = d.string(forKey: "hotkeyDisplay")
+        hotkeyDisplay         = (storedHotkey == nil || storedHotkey == "⌘ Space") ? "⌘ L" : storedHotkey!
         launchAtLogin         = d.object(forKey: "launchAtLogin") as? Bool ?? true
         showDockIcon          = d.object(forKey: "showDockIcon") as? Bool ?? true
         theme                 = Theme(rawValue: d.string(forKey: "theme") ?? "system") ?? .system

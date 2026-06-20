@@ -157,7 +157,7 @@ struct OnboardingView: View {
             .frame(width: 460, height: 150).padding(.top, 22)
 
             HStack(spacing: 10) {
-                tag("⌘ SPACE TO TALK"); tag("GLOW = AGENT WORKING"); tag("SPEAK NATURALLY")
+                tag("⌘ L TO TALK"); tag("GLOW = AGENT WORKING"); tag("SPEAK NATURALLY")
             }
             .padding(.top, 18)
             Spacer()

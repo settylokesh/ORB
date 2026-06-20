@@ -18,7 +18,7 @@ struct DashboardView: View {
                     VStack(spacing: 14) {
                         Button(action: { app.activate() }) { OrbView(size: 128) }
                             .buttonStyle(.plain)
-                        MonoLabel(text: "⌘ SPACE TO TALK", color: ORBTheme.ink2, size: 11)
+                        MonoLabel(text: "⌘ L TO TALK", color: ORBTheme.ink2, size: 11)
                     }
 
                     VStack(alignment: .leading, spacing: 0) {

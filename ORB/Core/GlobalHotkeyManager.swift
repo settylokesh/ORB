@@ -2,8 +2,7 @@
 //  GlobalHotkeyManager.swift
 //  ORB
 //
-//  System-wide hotkey via Carbon RegisterEventHotKey. Default ⌘Space
-//  (note: this can conflict with Spotlight — onboarding warns the user).
+//  System-wide hotkey via Carbon RegisterEventHotKey. Default ⌘L.
 //
 
 import Foundation
@@ -18,7 +17,7 @@ final class GlobalHotkeyManager {
     private var hotKeyRef: EventHotKeyRef?
     private var handlerRef: EventHandlerRef?
 
-    func register(keyCode: UInt32 = UInt32(kVK_Space), modifiers: UInt32 = UInt32(cmdKey)) {
+    func register(keyCode: UInt32 = UInt32(kVK_ANSI_L), modifiers: UInt32 = UInt32(cmdKey)) {
         unregister()
 
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
