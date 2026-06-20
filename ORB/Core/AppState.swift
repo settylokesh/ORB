@@ -40,6 +40,13 @@ final class AppState: ObservableObject {
     /// Set by AppDelegate once the overlay window exists.
     weak var glow: GlowBorderControlling?
 
+    /// Window navigation, injected by AppDelegate (which owns the WindowManager).
+    var onShowMain: ((MainTab) -> Void)?
+    var onShowOnboarding: (() -> Void)?
+
+    /// Open the setup/onboarding flow so the user can install models & permissions.
+    func openSetup() { onShowOnboarding?() }
+
     // Navigation (main window tab, shared with the menu)
     @Published var selectedTab: MainTab = .dashboard
 
@@ -92,6 +99,13 @@ final class AppState: ObservableObject {
         }
         guard models.moonshine.isReady else {
             errorMessage = ORBError.modelNotDownloaded("Moonshine").errorDescription
+            openSetup()   // send the user to finish installing the model
+            return
+        }
+        guard permissions.microphone == .granted else {
+            // Not yet determined → ask now; denied was handled above.
+            Task { await permissions.requestMicrophone() }
+            errorMessage = ORBError.microphoneDenied.errorDescription
             return
         }
         errorMessage = nil
@@ -108,12 +122,18 @@ final class AppState: ObservableObject {
         audio.onLevel = { [weak self] level in self?.audioLevel = level }
         audio.onChunk = { [weak self] chunk in self?.stt.feed(chunk) }
         audio.silence.onSilence = { [weak self] in self?.finalizeListening() }
-        try? audio.start()
+        do {
+            try audio.start()
+        } catch {
+            errorMessage = "Couldn't start the microphone. Check the mic permission and try again."
+            state = .idle
+            ram.setPhase(.idle)
+            return
+        }
 
-        // If the mic never produces audio (e.g. no permission yet), still
-        // auto-finalize so the demo flows. Real silence detection wins if it fires first.
-        let timeout = settings.silenceTimeout
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.4 + timeout) { [weak self] in
+        // Safety cap: stop after a maximum utterance length so a stuck capture
+        // never hangs the agent. Real silence detection normally fires first.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
             guard let self, self.state == .listening else { return }
             self.finalizeListening()
         }
@@ -205,7 +225,6 @@ final class AppState: ObservableObject {
 
         executor.actionDelay = settings.actionDelay
         executor.maxRetries = settings.maxRetries
-        executor.simulateOnly = (permissions.accessibility != .granted)
         executor.onStepStatus = { [weak self] index, status in
             guard let self, self.steps.indices.contains(index) else { return }
             self.steps[index].status = status

@@ -79,12 +79,16 @@ final class StatusBarController {
         menu.addItem(withTitle: "History", action: #selector(openHistory), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Settings", action: #selector(openSettings), keyEquivalent: ",").target = self
         menu.addItem(.separator())
-        let gemma = NSMenuItem(title: "Model: Gemma 4 E4B — Ready", action: nil, keyEquivalent: "")
+        let gemma = NSMenuItem(title: "Model: Gemma 4 E4B — \(Self.label(appState.models.gemma))", action: nil, keyEquivalent: "")
         gemma.isEnabled = false
         menu.addItem(gemma)
-        let stt = NSMenuItem(title: "STT: Moonshine — Ready", action: nil, keyEquivalent: "")
+        let stt = NSMenuItem(title: "STT: Moonshine — \(Self.label(appState.models.moonshine))", action: nil, keyEquivalent: "")
         stt.isEnabled = false
         menu.addItem(stt)
+        if !appState.models.bothReady {
+            menu.addItem(.separator())
+            menu.addItem(withTitle: "Install Models…", action: #selector(openSetup), keyEquivalent: "").target = self
+        }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit ORB", action: #selector(quit), keyEquivalent: "q").target = self
 
@@ -96,7 +100,17 @@ final class StatusBarController {
     @objc private func openMain() { windowManager.showMain(tab: .dashboard) }
     @objc private func openHistory() { windowManager.showMain(tab: .history) }
     @objc private func openSettings() { windowManager.showMain(tab: .settings) }
+    @objc private func openSetup() { windowManager.showOnboarding() }
     @objc private func quit() { NSApp.terminate(nil) }
+
+    private static func label(_ phase: ModelManager.Phase) -> String {
+        switch phase {
+        case .ready: return "Ready"
+        case .downloading(let f): return "Downloading \(Int(f * 100))%"
+        case .failed: return "Failed"
+        case .notDownloaded: return "Not installed"
+        }
+    }
 
     // MARK: - Icon
 

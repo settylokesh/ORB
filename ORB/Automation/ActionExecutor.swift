@@ -8,12 +8,12 @@
 
 import Foundation
 import CoreGraphics
+import ApplicationServices
 
 @MainActor
 final class ActionExecutor {
     var actionDelay: TimeInterval = 0.4
     var maxRetries: Int = 2
-    var simulateOnly: Bool = false   // when true, don't actually drive the Mac
 
     private let llm: LLMEngine
     private let fileSearch = FileSearchEngine()
@@ -40,14 +40,19 @@ final class ActionExecutor {
                 if isCancelled { throw CancellationError() }
                 do {
                     try await perform(action)
-                    // Verify with a fresh screenshot (skipped if screen capture isn't available).
-                    let shot = try? await ScreenReader.capture()
-                    let ok = await llm.verifyStep(action, screenshot: shot)
-                    if ok { succeeded = true; break }
+                    // Only explicit `verify` steps pay for a Gemma vision check;
+                    // other actions succeed if they ran without throwing. (Verifying
+                    // every step is too slow and can spuriously fail real commands.)
+                    if action.kind == .verify {
+                        let shot = try? await ScreenReader.capture()
+                        if await llm.verifyStep(action, screenshot: shot) { succeeded = true; break }
+                    } else {
+                        succeeded = true; break
+                    }
                 } catch let e as ORBError {
                     // Non-retryable hard errors bubble up immediately.
                     switch e {
-                    case .appNotFound, .fileNotFound: throw e
+                    case .appNotFound, .fileNotFound, .accessibilityMissing: throw e
                     default: break
                     }
                 } catch {
@@ -69,10 +74,19 @@ final class ActionExecutor {
 
     // MARK: - Performing one action
 
+    /// Actions that drive the keyboard/mouse via CGEvent need Accessibility.
+    private static func requiresAccessibility(_ kind: ActionKind) -> Bool {
+        switch kind {
+        case .type, .keyShortcut, .click, .scroll: return true
+        default: return false
+        }
+    }
+
     private func perform(_ action: PlannedAction) async throws {
-        if simulateOnly {
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            return
+        // Input-control actions silently no-op without Accessibility, which looks
+        // like the agent "did nothing". Fail loudly instead so the user can grant it.
+        if Self.requiresAccessibility(action.kind), !AXIsProcessTrusted() {
+            throw ORBError.accessibilityMissing
         }
         switch action.kind {
         case .openApp:

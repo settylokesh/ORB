@@ -46,8 +46,12 @@ struct DashboardView: View {
 
                 // Model cards
                 HStack(spacing: 14) {
-                    modelCard(app.gemmaStatus, ramLabel: "RAM (LOADED)", metricSuffix: "")
-                    modelCard(app.moonshineStatus, ramLabel: "RAM (LOADED)", metricSuffix: "")
+                    modelCard(app.gemmaStatus, phase: app.models.gemma,
+                              bytes: app.models.gemmaBytes, approxSize: "~4.3 GB",
+                              action: { Task { await app.models.downloadGemma() } })
+                    modelCard(app.moonshineStatus, phase: app.models.moonshine,
+                              bytes: app.models.moonshineBytes, approxSize: "~190 MB",
+                              action: { Task { await app.models.downloadMoonshine() } })
                 }
                 .padding(.top, 22)
 
@@ -73,23 +77,65 @@ struct DashboardView: View {
         }
     }
 
-    private func modelCard(_ m: ModelStatus, ramLabel: String, metricSuffix: String) -> some View {
+    @ViewBuilder
+    private func modelCard(_ m: ModelStatus, phase: ModelManager.Phase,
+                           bytes: (Int64, Int64), approxSize: String,
+                           action: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text(m.name).font(ORBTheme.ui(14, weight: .semibold))
                 Spacer()
-                StatusPill(text: m.isReady ? "READY" : "OFF", kind: m.isReady ? .good : .neutral)
+                StatusPill(text: pillText(phase), kind: m.isReady ? .good : .neutral)
             }
             HStack(spacing: 18) {
                 metric(value: m.metric, unit: m.metricLabel, label: "SPEED/LATENCY")
-                metric(value: ramValue(m.ramMB), unit: ramUnit(m.ramMB), label: ramLabel)
+                metric(value: ramValue(m.ramMB), unit: ramUnit(m.ramMB), label: "RAM (LOADED)")
             }
             .padding(.top, 12)
+
+            // Install / progress / retry affordance when the model isn't ready.
+            switch phase {
+            case .ready:
+                EmptyView()
+            case .downloading(let f):
+                VStack(alignment: .leading, spacing: 6) {
+                    ProgressView(value: f).tint(ORBTheme.accent)
+                    Text(bytes.1 > 0 ? "\(Self.fmt(bytes.0)) / \(Self.fmt(bytes.1))" : "Downloading…")
+                        .font(ORBTheme.mono(10)).foregroundStyle(ORBTheme.ink3)
+                }
+                .padding(.top, 12)
+            case .notDownloaded:
+                HStack {
+                    Button("Download", action: action).buttonStyle(ORBPrimaryButtonStyle())
+                    Text(approxSize).font(ORBTheme.mono(11)).foregroundStyle(ORBTheme.ink3)
+                }
+                .padding(.top, 12)
+            case .failed(let msg):
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(msg).font(ORBTheme.mono(10)).foregroundStyle(ORBTheme.danger).lineLimit(2)
+                    Button("Retry", action: action).buttonStyle(ORBPrimaryButtonStyle())
+                }
+                .padding(.top, 12)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 12).fill(ORBTheme.card))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(ORBTheme.line))
+    }
+
+    private static func fmt(_ b: Int64) -> String {
+        let mb = Double(b) / 1_048_576
+        return mb >= 1024 ? String(format: "%.1f GB", mb / 1024) : String(format: "%.0f MB", mb)
+    }
+
+    private func pillText(_ phase: ModelManager.Phase) -> String {
+        switch phase {
+        case .ready: return "READY"
+        case .downloading(let f): return "\(Int(f * 100))%"
+        case .failed: return "FAILED"
+        case .notDownloaded: return "NOT INSTALLED"
+        }
     }
 
     private func ramValue(_ mb: Int) -> String {

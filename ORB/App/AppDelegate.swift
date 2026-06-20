@@ -21,6 +21,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windowManager = WindowManager(appState: appState)
         statusBar = StatusBarController(appState: appState, windowManager: windowManager)
 
+        // Let AppState drive window navigation (e.g. "Finish setup" from the popover).
+        appState.onShowMain = { [weak self] tab in self?.windowManager.showMain(tab: tab) }
+        appState.onShowOnboarding = { [weak self] in self?.windowManager.showOnboarding() }
+
         // Global hotkey → open popover + start listening.
         GlobalHotkeyManager.shared.onTrigger = { [weak self] in
             self?.statusBar.activateFromHotkey()
@@ -30,8 +34,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationManager.shared.requestAuthorization()
         LoginItem.set(appState.settings.launchAtLogin)
 
-        if !appState.settings.hasOnboarded {
+        // Reconcile state with what's actually on disk / granted before deciding.
+        appState.models.refresh()
+        appState.permissions.refresh()
+
+        // Show the setup flow on first run, or whenever the models the app needs
+        // aren't actually installed yet — so the user is never dropped into a
+        // dashboard that silently can't do anything.
+        if !appState.settings.hasOnboarded || !appState.models.bothReady {
             windowManager.showOnboarding()
+        } else {
+            windowManager.showMain(tab: .dashboard)
         }
     }
 

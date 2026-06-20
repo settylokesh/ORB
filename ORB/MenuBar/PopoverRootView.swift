@@ -59,7 +59,15 @@ struct IdleStateView: View {
             .font(ORBTheme.ui(13))
             .padding(.top, 5)
 
-            if let msg = app.errorMessage {
+            if !app.models.bothReady {
+                VStack(spacing: 8) {
+                    Text("Models aren't installed yet")
+                        .font(ORBTheme.ui(12, weight: .semibold)).foregroundStyle(ORBTheme.warning)
+                    Button("Finish setup") { app.openSetup() }
+                        .buttonStyle(ORBPrimaryButtonStyle())
+                }
+                .padding(.top, 12)
+            } else if let msg = app.errorMessage {
                 Text(msg).font(ORBTheme.ui(12)).foregroundStyle(ORBTheme.danger)
                     .multilineTextAlignment(.center).padding(.top, 12)
             }
@@ -84,20 +92,21 @@ struct IdleStateView: View {
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(ORBTheme.line))
             .padding(.top, 22)
 
-            // Status pills
+            // Status pills (reflect the real model state)
             HStack(spacing: 8) {
-                statusPill("GEMMA READY")
-                statusPill("MOONSHINE")
+                statusPill("GEMMA", ready: app.models.gemma.isReady)
+                statusPill("MOONSHINE", ready: app.models.moonshine.isReady)
             }
             .padding(.top, 12)
         }
         .padding(24)
     }
 
-    private func statusPill(_ text: String) -> some View {
+    private func statusPill(_ text: String, ready: Bool) -> some View {
         HStack(spacing: 7) {
-            Circle().fill(ORBTheme.success).frame(width: 7, height: 7)
-            Text(text).font(ORBTheme.mono(10)).foregroundStyle(ORBTheme.ink2)
+            Circle().fill(ready ? ORBTheme.success : ORBTheme.ink3).frame(width: 7, height: 7)
+            Text(ready ? "\(text) READY" : "\(text) OFF")
+                .font(ORBTheme.mono(10)).foregroundStyle(ORBTheme.ink2)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
