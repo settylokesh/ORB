@@ -28,8 +28,33 @@ final class WindowManager {
     private let appState: AppState
     private var mainWindow: NSWindow?
     private var onboardingWindow: NSWindow?
+    private var activationObserver: NSObjectProtocol?
 
-    init(appState: AppState) { self.appState = appState }
+    init(appState: AppState) {
+        self.appState = appState
+        // When the user switches back to ORB (e.g. after toggling a permission
+        // in System Settings), surface whichever ORB window is open so it isn't
+        // stranded behind other apps — without forcing it to float on top.
+        activationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.bringFrontmostToFront() }
+        }
+    }
+
+    deinit {
+        if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
+    }
+
+    /// Bring the active ORB window forward (onboarding takes priority over the
+    /// main window). Called when the app is reactivated.
+    private func bringFrontmostToFront() {
+        if let w = onboardingWindow, w.isVisible {
+            w.makeKeyAndOrderFront(nil)
+        } else if let w = mainWindow, w.isVisible {
+            w.makeKeyAndOrderFront(nil)
+        }
+    }
 
     func showMain(tab: MainTab) {
         appState.selectedTab = tab
@@ -68,13 +93,11 @@ final class WindowManager {
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
             window.isReleasedWhenClosed = false
-            // Onboarding walks the user through System Settings to grant
-            // permissions. Float above other apps (incl. System Settings) and
-            // follow the active Space so the instructions never get buried —
-            // otherwise opening Settings sends ORB to the back and the user has
-            // to hunt for the menu-bar icon to bring it forward again.
-            window.level = .floating
-            window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+            // A normal-level window (so it does NOT stay pinned on top of other
+            // apps/tabs). It must not auto-hide when ORB loses focus, otherwise
+            // sending the user to System Settings would leave nothing to return
+            // to; instead we re-surface it when ORB is reactivated (see
+            // `bringFrontmostToFront`).
             window.hidesOnDeactivate = false
             window.center()
             onboardingWindow = window

@@ -85,7 +85,8 @@ struct OnboardingView: View {
             status: permissions.accessibility,
             primaryTitle: "Open Settings",
             primary: { permissions.requestAccessibility() },
-            note: "ENABLES AUTOMATICALLY WHEN GRANTED")
+            note: "ENABLES AUTOMATICALLY WHEN GRANTED",
+            reset: { permissions.resetPermissions() })
     }
 
     private var screenRecordingScreen: some View {
@@ -95,7 +96,8 @@ struct OnboardingView: View {
             status: permissions.screenRecording,
             primaryTitle: "Open Settings",
             primary: { permissions.requestScreenRecording() },
-            note: "FRAMES ARE PROCESSED LOCALLY, NEVER SAVED")
+            note: "FRAMES ARE PROCESSED LOCALLY, NEVER SAVED",
+            reset: { permissions.resetPermissions() })
     }
 
     private var downloadScreen: some View {
@@ -175,7 +177,8 @@ struct OnboardingView: View {
 
     private func permissionScreen(n: Int, icon: String, title: String, body: String,
                                   status: PermissionsManager.Status, primaryTitle: String,
-                                  primary: @escaping () -> Void, note: String) -> some View {
+                                  primary: @escaping () -> Void, note: String,
+                                  reset: (() -> Void)? = nil) -> some View {
         VStack(spacing: 0) {
             header(n)
             Spacer()
@@ -196,6 +199,14 @@ struct OnboardingView: View {
                 .foregroundStyle(status == .granted ? ORBTheme.accent : ORBTheme.ink3)
                 .padding(.top, 14)
             MonoLabel(text: note).padding(.top, 14)
+            // Dev builds get re-signed each rebuild, so a previously-granted
+            // permission can keep showing "waiting". Let the user clear the stale
+            // grant and try again without leaving onboarding.
+            if let reset, status != .granted {
+                Button("Still says waiting? Reset & try again", action: reset)
+                    .buttonStyle(.plain).font(ORBTheme.ui(12, weight: .medium))
+                    .foregroundStyle(ORBTheme.ink3).padding(.top, 10)
+            }
             Spacer()
         }
     }

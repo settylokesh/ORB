@@ -129,6 +129,41 @@ final class PermissionsManager: ObservableObject {
         refresh()
     }
 
+    /// Clear ORB's Accessibility & Screen-Recording grants from the TCC database.
+    ///
+    /// ORB ships ad-hoc signed, so every rebuild produces a new code signature
+    /// and macOS quietly stops honouring the previous grant — the checkbox can
+    /// still look enabled while `AXIsProcessTrusted()` returns false, so the app
+    /// keeps saying "Needed" no matter how many times you refresh or restart.
+    /// Resetting removes the stale entry; the next grant then attaches to the
+    /// *current* binary and actually takes effect.
+    func resetPermissions() {
+        let bundleID = Bundle.main.bundleIdentifier ?? "Lokesh.ORB"
+        Task { @MainActor in
+            await Self.runReset(bundleID: bundleID)
+            // Stale entry is gone; re-read live state. The user then taps the
+            // permission's own "Open Settings" / "Fix" button, which re-prompts
+            // for the correct pane and re-adds ORB to the list, freshly grantable.
+            refresh()
+        }
+    }
+
+    /// Run `tccutil reset` off the main thread (Process can block briefly).
+    private static func runReset(bundleID: String) async {
+        await withCheckedContinuation { cont in
+            DispatchQueue.global(qos: .userInitiated).async {
+                for service in ["Accessibility", "ScreenCapture"] {
+                    let p = Process()
+                    p.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+                    p.arguments = ["reset", service, bundleID]
+                    try? p.run()
+                    p.waitUntilExit()
+                }
+                cont.resume()
+            }
+        }
+    }
+
     /// Relaunch ORB. macOS sometimes only re-reads a freshly granted permission
     /// (or a re-signed dev build's TCC entry) after a restart — this gives the
     /// user a one-click way to do that.

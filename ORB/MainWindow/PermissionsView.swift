@@ -39,14 +39,19 @@ struct PermissionsView: View {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "info.circle.fill").foregroundStyle(ORBTheme.accent)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Already enabled it but it still shows NEEDED?")
+                        Text("Enabled it but it still shows NEEDED?")
                             .font(ORBTheme.ui(13, weight: .semibold)).foregroundStyle(Color(hex: "9A4A14"))
-                        Text("macOS sometimes only re-reads a permission after a restart. Toggle it off and on in System Settings, or restart ORB below.")
+                        Text("Each rebuild re-signs ORB, so macOS drops the old grant even though the switch still looks on. Tap Reset to clear the stale entry, then enable it again — that fresh grant sticks.")
                             .font(ORBTheme.ui(13)).foregroundStyle(Color(hex: "9A4A14"))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
-                    Button("Restart ORB") { permissions.relaunch() }
-                        .buttonStyle(ORBSecondaryButtonStyle()).fixedSize()
+                    VStack(spacing: 8) {
+                        Button("Reset Permissions") { permissions.resetPermissions() }
+                            .buttonStyle(ORBPrimaryButtonStyle()).fixedSize()
+                        Button("Restart ORB") { permissions.relaunch() }
+                            .buttonStyle(ORBSecondaryButtonStyle()).fixedSize()
+                    }
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
