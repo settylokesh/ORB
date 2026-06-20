@@ -35,19 +35,38 @@ struct PermissionsView: View {
             }
             .padding(.top, 24)
 
+            if !permissions.allGranted {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "info.circle.fill").foregroundStyle(ORBTheme.accent)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Already enabled it but it still shows NEEDED?")
+                            .font(ORBTheme.ui(13, weight: .semibold)).foregroundStyle(Color(hex: "9A4A14"))
+                        Text("macOS sometimes only re-reads a permission after a restart. Toggle it off and on in System Settings, or restart ORB below.")
+                            .font(ORBTheme.ui(13)).foregroundStyle(Color(hex: "9A4A14"))
+                    }
+                    Spacer()
+                    Button("Restart ORB") { permissions.relaunch() }
+                        .buttonStyle(ORBSecondaryButtonStyle()).fixedSize()
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 10).fill(ORBTheme.accentSoft))
+                .padding(.top, 20)
+            }
+
             if permissions.screenRecording != .granted {
                 Text("Without Screen Recording, ORB can still hear and type — but it can’t visually verify each step. Grant it for full reliability.")
                     .font(ORBTheme.ui(13)).foregroundStyle(Color(hex: "9A4A14"))
                     .padding(16)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(RoundedRectangle(cornerRadius: 10).fill(ORBTheme.accentSoft))
-                    .padding(.top, 20)
+                    .padding(.top, 12)
             }
 
             Spacer()
         }
         .padding(.horizontal, 38).padding(.vertical, 34)
-        .onAppear { permissions.refresh() }
+        .onAppear { permissions.startMonitoring(); permissions.refresh() }
     }
 
     private func row(icon: String, title: String, subtitle: String,

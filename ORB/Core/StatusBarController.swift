@@ -121,25 +121,34 @@ final class StatusBarController {
     }
 
     private static func icon(for state: AgentState) -> NSImage {
+        // A small branded orb (sphere + highlight) tinted by the agent state.
         let size = NSSize(width: 18, height: 18)
         let image = NSImage(size: size)
         image.lockFocus()
-        let rect = NSRect(x: 1, y: 1, width: 16, height: 16)
-        let path = NSBezierPath(ovalIn: rect)
+        let rect = NSRect(x: 2, y: 2, width: 14, height: 14)
+        let sphere = NSBezierPath(ovalIn: rect)
+
+        let base: NSColor
         switch state {
-        case .idle:
-            NSColor(calibratedRed: 0.72, green: 0.69, blue: 0.65, alpha: 1).setStroke()
-            path.lineWidth = 2; path.stroke()
-        case .listening:
-            NSColor(srgbRed: 1, green: 0.42, blue: 0.10, alpha: 1).setFill(); path.fill()
-        case .planning, .executing:
-            NSColor(srgbRed: 1, green: 0.55, blue: 0.18, alpha: 1).setFill(); path.fill()
-        case .success:
-            NSColor(srgbRed: 0.16, green: 0.78, blue: 0.25, alpha: 1).setFill(); path.fill()
-        case .failure:
-            NSColor(srgbRed: 1, green: 0.23, blue: 0.19, alpha: 1).setFill(); path.fill()
+        case .idle:       base = NSColor(srgbRed: 1, green: 0.42, blue: 0.10, alpha: 1)
+        case .listening:  base = NSColor(srgbRed: 1, green: 0.42, blue: 0.10, alpha: 1)
+        case .planning, .executing: base = NSColor(srgbRed: 1, green: 0.55, blue: 0.18, alpha: 1)
+        case .success:    base = NSColor(srgbRed: 0.16, green: 0.78, blue: 0.25, alpha: 1)
+        case .failure:    base = NSColor(srgbRed: 1, green: 0.23, blue: 0.19, alpha: 1)
         }
+
+        // Sphere body with a subtle radial sheen.
+        if let gradient = NSGradient(colors: [base.blended(withFraction: 0.45, of: .white) ?? base, base]) {
+            gradient.draw(in: sphere, relativeCenterPosition: NSPoint(x: -0.35, y: 0.35))
+        } else {
+            base.setFill(); sphere.fill()
+        }
+        // Specular highlight.
+        NSColor(white: 1, alpha: 0.55).setFill()
+        NSBezierPath(ovalIn: NSRect(x: 5, y: 9.5, width: 4, height: 3)).fill()
+
         image.unlockFocus()
+        image.isTemplate = false
         return image
     }
 }

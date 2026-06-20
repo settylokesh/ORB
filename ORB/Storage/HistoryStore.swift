@@ -20,7 +20,6 @@ final class HistoryStore: ObservableObject {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         fileURL = dir.appendingPathComponent("history.json")
         load()
-        if records.isEmpty { seedSampleData() }
     }
 
     func add(_ record: CommandRecord) {
@@ -28,6 +27,21 @@ final class HistoryStore: ObservableObject {
         persist()
     }
 
+    /// Delete a single record (per-row delete in the UI).
+    func delete(_ record: CommandRecord) {
+        records.removeAll { $0.id == record.id }
+        persist()
+    }
+
+    /// Delete records at the given list offsets (swipe / multi-delete).
+    func delete(at offsets: IndexSet) {
+        records = records.enumerated()
+            .filter { !offsets.contains($0.offset) }
+            .map { $0.element }
+        persist()
+    }
+
+    /// Clear the entire history.
     func clear() {
         records.removeAll()
         persist()
@@ -55,29 +69,5 @@ final class HistoryStore: ObservableObject {
     private func persist() {
         guard let data = try? JSONEncoder().encode(records) else { return }
         try? data.write(to: fileURL, options: .atomic)
-    }
-
-    private func seedSampleData() {
-        records = [
-            CommandRecord(transcript: "Send a WhatsApp to Mom that I’m running late",
-                          result: .success,
-                          steps: ["Open WhatsApp", "Find contact", "Type", "Send"],
-                          duration: 5.1, retries: 0, date: Date().addingTimeInterval(-120)),
-            CommandRecord(transcript: "Open Chrome and search the latest M4 MacBook reviews",
-                          result: .success,
-                          steps: ["Launch Chrome", "Focus URL", "Type", "Return", "Verify"],
-                          duration: 4.2, retries: 0, date: Date().addingTimeInterval(-720)),
-            CommandRecord(transcript: "Set volume to 30%",
-                          result: .success, steps: ["System volume"],
-                          duration: 1.2, retries: 0, date: Date().addingTimeInterval(-1080)),
-            CommandRecord(transcript: "Open Spotify and play Discover Weekly",
-                          result: .success, steps: ["Launch Spotify", "Search", "Play"],
-                          duration: 4.0, retries: 0, date: Date().addingTimeInterval(-10800)),
-            CommandRecord(transcript: "Create reminder to buy groceries at 6pm",
-                          result: .failure, steps: ["Open Reminders", "Create"],
-                          duration: 30, retries: 2, date: Date().addingTimeInterval(-90000),
-                          failureReason: "Timed out after 30s · Reminders did not respond"),
-        ]
-        persist()
     }
 }

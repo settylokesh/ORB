@@ -12,6 +12,7 @@
 
 import Foundation
 import Combine
+import AppKit
 import MLXLMCommon
 import MLXVLM
 import MLXHuggingFace
@@ -61,11 +62,21 @@ final class ModelManager: ObservableObject {
         ("generation_config.json",             "generation_config.json"),
     ]
 
+    /// The single root that holds *every* model ORB downloads, so the user has
+    /// one folder to inspect, back up or delete. Both Moonshine (ONNX) and Gemma
+    /// (MLX / Hugging Face cache) live underneath it.
     var modelsRoot: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return base.appendingPathComponent("ORB/Models", isDirectory: true)
     }
     var moonshineDir: URL { modelsRoot.appendingPathComponent("moonshine", isDirectory: true) }
+    /// Gemma is fetched through the Hugging Face hub; pin its cache inside our
+    /// single models root instead of the default ~/Documents/huggingface.
+    var huggingFaceDir: URL { modelsRoot.appendingPathComponent("huggingface", isDirectory: true) }
+
+    /// A Hugging Face client whose cache is redirected into `huggingFaceDir`,
+    /// so Gemma's weights land in the same folder as Moonshine's.
+    private lazy var hubClient = HubClient(cache: HubCache(cacheDirectory: huggingFaceDir))
 
     /// The loaded Gemma container, shared with the engine once downloaded.
     private(set) var gemmaContainer: ModelContainer?
@@ -90,9 +101,11 @@ final class ModelManager: ObservableObject {
         }
     }
 
-    /// Gemma is considered present if MLX has previously cached its weights.
+    /// Gemma is considered present if MLX has previously cached its weights AND
+    /// the cache folder still holds files (so deleting it via Finder is honoured).
     private var gemmaCachePresent: Bool {
-        UserDefaults.standard.bool(forKey: "orb.gemma.downloaded")
+        guard UserDefaults.standard.bool(forKey: "orb.gemma.downloaded") else { return false }
+        return Self.directorySize(huggingFaceDir) > 0
     }
 
     // MARK: - Moonshine download (URLSession, real byte progress)
@@ -177,8 +190,9 @@ final class ModelManager: ObservableObject {
         guard !gemma.isReady || gemmaContainer == nil else { return }
         gemma = .downloading(0)
         do {
+            try? FileManager.default.createDirectory(at: huggingFaceDir, withIntermediateDirectories: true)
             let container = try await VLMModelFactory.shared.loadContainer(
-                from: #hubDownloader(),
+                from: #hubDownloader(hubClient),
                 using: #huggingFaceTokenizerLoader(),
                 configuration: Self.gemmaConfiguration
             ) { [weak self] progress in
@@ -199,8 +213,9 @@ final class ModelManager: ObservableObject {
     /// Loads (from cache, fast) and returns the Gemma container, downloading if needed.
     func loadGemmaContainer() async throws -> ModelContainer {
         if let c = gemmaContainer { return c }
+        try? FileManager.default.createDirectory(at: huggingFaceDir, withIntermediateDirectories: true)
         let container = try await VLMModelFactory.shared.loadContainer(
-            from: #hubDownloader(),
+            from: #hubDownloader(hubClient),
             using: #huggingFaceTokenizerLoader(),
             configuration: Self.gemmaConfiguration
         ) { [weak self] progress in
@@ -210,5 +225,45 @@ final class ModelManager: ObservableObject {
         UserDefaults.standard.set(true, forKey: "orb.gemma.downloaded")
         gemma = .ready
         return container
+    }
+
+    // MARK: - Folder access (single models root)
+
+    /// Total size on disk of everything ORB has downloaded, human readable.
+    var totalSizeLabel: String {
+        let bytes = Self.directorySize(modelsRoot)
+        guard bytes > 0 else { return "Empty" }
+        return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    /// Open the single models folder in Finder.
+    func revealModelsFolder() {
+        try? FileManager.default.createDirectory(at: modelsRoot, withIntermediateDirectories: true)
+        NSWorkspace.shared.activateFileViewerSelecting([modelsRoot])
+    }
+
+    /// Delete every downloaded model and reset state (frees the whole folder).
+    func deleteAllModels() {
+        gemmaContainer = nil
+        try? FileManager.default.removeItem(at: moonshineDir)
+        try? FileManager.default.removeItem(at: huggingFaceDir)
+        UserDefaults.standard.set(false, forKey: "orb.gemma.downloaded")
+        moonshine = .notDownloaded
+        gemma = .notDownloaded
+        moonshineBytes = (0, 0)
+        gemmaBytes = (0, 0)
+    }
+
+    /// Recursively sum the byte size of a directory tree.
+    static func directorySize(_ url: URL) -> Int64 {
+        guard let e = FileManager.default.enumerator(
+            at: url, includingPropertiesForKeys: [.totalFileAllocatedSizeKey, .fileSizeKey],
+            options: [], errorHandler: nil) else { return 0 }
+        var total: Int64 = 0
+        for case let fileURL as URL in e {
+            let v = try? fileURL.resourceValues(forKeys: [.totalFileAllocatedSizeKey, .fileSizeKey])
+            total += Int64(v?.totalFileAllocatedSize ?? v?.fileSize ?? 0)
+        }
+        return total
     }
 }

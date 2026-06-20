@@ -7,6 +7,8 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var settings: SettingsStore
+    @EnvironmentObject private var app: AppState
+    @State private var showDeleteModels = false
 
     var body: some View {
         ScrollView {
@@ -17,6 +19,7 @@ struct SettingsView: View {
                     VStack(spacing: 18) {
                         generalCard
                         modelsCard
+                        storageCard
                     }
                     VStack(spacing: 18) {
                         automationCard
@@ -56,15 +59,58 @@ struct SettingsView: View {
     private var modelsCard: some View {
         SettingsCard(title: "MODELS") {
             SettingsRow(label: "Speech-to-text") {
-                Picker("", selection: $settings.sttModel) {
-                    ForEach(["Moonshine Tiny", "Moonshine Small", "Moonshine Medium"], id: \.self) { Text($0).tag($0) }
-                }.labelsHidden().frame(width: 170)
+                modelTag("Moonshine Base", ready: app.models.moonshine.isReady)
             }
             SettingsRow(label: "Language model") {
-                Picker("", selection: $settings.llmModel) {
-                    ForEach(["Gemma 4 E2B", "Gemma 4 E4B", "Gemma 4 26B MoE"], id: \.self) { Text($0).tag($0) }
-                }.labelsHidden().frame(width: 170)
+                modelTag("Gemma 4 E4B · 4-bit", ready: app.models.gemma.isReady)
             }
+        }
+    }
+
+    private func modelTag(_ name: String, ready: Bool) -> some View {
+        HStack(spacing: 8) {
+            Text(name).font(ORBTheme.ui(13, weight: .medium))
+            StatusPill(text: ready ? "READY" : "NOT INSTALLED", kind: ready ? .good : .neutral)
+        }
+    }
+
+    private var storageCard: some View {
+        SettingsCard(title: "MODEL STORAGE") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("All models live in one folder you can inspect, back up or delete.")
+                    .font(ORBTheme.ui(12.5)).foregroundStyle(ORBTheme.ink2)
+                HStack(spacing: 8) {
+                    Image(systemName: "folder.fill").foregroundStyle(ORBTheme.accent)
+                    Text(app.models.modelsRoot.path)
+                        .font(ORBTheme.mono(10.5)).foregroundStyle(ORBTheme.ink2)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 9)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color(hex: "F4F2EE")))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(ORBTheme.line))
+            }
+            .padding(.horizontal, 16).padding(.vertical, 11)
+
+            SettingsRow(label: "On disk") {
+                Text(app.models.totalSizeLabel).font(ORBTheme.mono(11)).foregroundStyle(ORBTheme.ink2)
+            }
+            HStack(spacing: 10) {
+                Button("Reveal in Finder") { app.models.revealModelsFolder() }
+                    .buttonStyle(ORBSecondaryButtonStyle())
+                Spacer()
+                Button("Delete all models") { showDeleteModels = true }
+                    .buttonStyle(.plain)
+                    .font(ORBTheme.ui(13, weight: .semibold)).foregroundStyle(ORBTheme.danger)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .overlay(Divider(), alignment: .top)
+        }
+        .alert("Delete all downloaded models?", isPresented: $showDeleteModels) {
+            Button("Delete", role: .destructive) { app.models.deleteAllModels() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes Moonshine and Gemma from disk. You'll need to download them again before ORB can run commands.")
         }
     }
 

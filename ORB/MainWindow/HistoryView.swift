@@ -13,6 +13,7 @@ struct HistoryView: View {
     enum Filter: String, CaseIterable { case all = "ALL", success = "SUCCESS", failed = "FAILED" }
     @State private var search = ""
     @State private var filter: Filter = .all
+    @State private var showClearAll = false
 
     private var filtered: [CommandRecord] {
         history.records.filter { rec in
@@ -25,12 +26,27 @@ struct HistoryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
+            HStack(spacing: 10) {
                 Text("History").font(ORBTheme.ui(22, weight: .bold))
+                if !history.records.isEmpty {
+                    Text("\(history.records.count)")
+                        .font(ORBTheme.mono(11, weight: .semibold)).foregroundStyle(ORBTheme.ink3)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Capsule().fill(ORBTheme.board))
+                }
                 Spacer()
                 Button("Export .txt") { exportHistory() }
                     .buttonStyle(ORBSecondaryButtonStyle())
                     .fixedSize()
+                    .disabled(history.records.isEmpty)
+                Button("Clear all") { showClearAll = true }
+                    .buttonStyle(.plain)
+                    .font(ORBTheme.ui(14, weight: .semibold))
+                    .foregroundStyle(history.records.isEmpty ? ORBTheme.ink3 : ORBTheme.danger)
+                    .padding(.vertical, 11).padding(.horizontal, 18)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(ORBTheme.card))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(ORBTheme.line))
+                    .disabled(history.records.isEmpty)
             }
 
             HStack(spacing: 10) {
@@ -57,16 +73,42 @@ struct HistoryView: View {
             }
             .padding(.top, 18)
 
-            ScrollView {
-                VStack(spacing: 9) {
-                    ForEach(filtered) { rec in
-                        row(rec)
+            if filtered.isEmpty {
+                emptyState
+            } else {
+                ScrollView {
+                    VStack(spacing: 9) {
+                        ForEach(filtered) { rec in
+                            row(rec)
+                        }
                     }
+                    .padding(.top, 16)
                 }
-                .padding(.top, 16)
             }
         }
         .padding(.horizontal, 38).padding(.vertical, 34)
+        .alert("Clear all history?", isPresented: $showClearAll) {
+            Button("Clear all", role: .destructive) { history.clear() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently deletes all \(history.records.count) command(s) from this Mac.")
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Spacer()
+            Image(systemName: history.records.isEmpty ? "clock.arrow.circlepath" : "magnifyingglass")
+                .font(.system(size: 34, weight: .light)).foregroundStyle(ORBTheme.ink3)
+            Text(history.records.isEmpty ? "No commands yet" : "No matching commands")
+                .font(ORBTheme.ui(16, weight: .semibold)).foregroundStyle(ORBTheme.ink2)
+            Text(history.records.isEmpty
+                 ? "Say a command and it'll show up here."
+                 : "Try a different search or filter.")
+                .font(ORBTheme.ui(13)).foregroundStyle(ORBTheme.ink3)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func row(_ rec: CommandRecord) -> some View {
@@ -93,11 +135,26 @@ struct HistoryView: View {
                 Image(systemName: "arrow.clockwise").foregroundStyle(ORBTheme.accent)
             }
             .buttonStyle(.plain)
+            .help("Run again")
+            Button(action: { history.delete(rec) }) {
+                Image(systemName: "trash").foregroundStyle(ORBTheme.ink3)
+            }
+            .buttonStyle(.plain)
+            .help("Delete")
         }
         .padding(.horizontal, 16).padding(.vertical, 14)
         .background(RoundedRectangle(cornerRadius: 11).fill(ORBTheme.card))
         .overlay(RoundedRectangle(cornerRadius: 11)
             .stroke(ok ? ORBTheme.line : ORBTheme.danger.opacity(0.25)))
+        .contextMenu {
+            Button("Run again") { app.lastRecord = rec; app.repeatLast() }
+            Button("Copy transcript") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(rec.transcript, forType: .string)
+            }
+            Divider()
+            Button("Delete", role: .destructive) { history.delete(rec) }
+        }
     }
 
     private func exportHistory() {

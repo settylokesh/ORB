@@ -84,7 +84,11 @@ struct MicGlyph: View {
     }
 }
 
-/// The small ringed orb used in headers / sidebar (the logo mark).
+/// The small ringed orb used in headers / sidebar — the ORB logo mark.
+///
+/// Mirrors the design lockup: a tilted orbit (faded behind the sphere, solid
+/// where it crosses in front), the glowing core, a highlight, and the node dot
+/// riding the front of the orbit.
 struct OrbLogoMark: View {
     var size: CGFloat = 30
     var body: some View {
@@ -92,25 +96,59 @@ struct OrbLogoMark: View {
             let s = size
             func scaled(_ v: CGFloat) -> CGFloat { v / 168 * s }
             let center = CGPoint(x: scaled(84), y: scaled(84))
+            let rx = scaled(78), ry = scaled(29)
+            let tilt = -26.0 * .pi / 180.0
+            let cosT = cos(tilt), sinT = sin(tilt)
 
-            // back ring (rotated ellipse)
-            var ring = Path()
-            ring.addEllipse(in: CGRect(x: scaled(6), y: scaled(55), width: scaled(156), height: scaled(58)))
-            ctx.drawLayer { layer in
-                layer.translateBy(x: center.x, y: center.y)
-                layer.rotate(by: .degrees(-26))
-                layer.translateBy(x: -center.x, y: -center.y)
-                layer.stroke(ring, with: .color(ORBTheme.accentDeep.opacity(0.38)), lineWidth: scaled(6))
+            // A point on the tilted orbit for parameter angle `deg`.
+            func orbit(_ deg: Double) -> CGPoint {
+                let t = deg * .pi / 180.0
+                let x = rx * cos(t), y = ry * sin(t)
+                return CGPoint(x: center.x + cosT * x - sinT * y,
+                               y: center.y + sinT * x + cosT * y)
+            }
+            func arcPath(_ from: Double, _ to: Double) -> Path {
+                var p = Path()
+                let steps = 48
+                for i in 0...steps {
+                    let d = from + (to - from) * Double(i) / Double(steps)
+                    let pt = orbit(d)
+                    if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
+                }
+                return p
             }
 
-            // core
-            let core = Path(ellipseIn: CGRect(x: scaled(38), y: scaled(38), width: scaled(92), height: scaled(92)))
+            // Back of the orbit (full ellipse, faded, behind the sphere).
+            ctx.stroke(arcPath(0, 360),
+                       with: .color(ORBTheme.accentDeep.opacity(0.34)),
+                       style: StrokeStyle(lineWidth: scaled(5), lineCap: .round))
+
+            // Glowing core.
+            let core = Path(ellipseIn: CGRect(x: scaled(40), y: scaled(40), width: scaled(88), height: scaled(88)))
             ctx.fill(core, with: .radialGradient(
                 Gradient(colors: [Color(hex: "FFEAD4"), Color(hex: "FF9F52"), ORBTheme.accent, Color(hex: "D9490C")]),
                 center: CGPoint(x: scaled(72), y: scaled(64)),
-                startRadius: 0, endRadius: scaled(64)))
+                startRadius: 0, endRadius: scaled(62)))
+
+            // Specular highlight.
+            let hi = Path(ellipseIn: CGRect(x: scaled(55), y: scaled(55), width: scaled(30), height: scaled(22)))
+            ctx.fill(hi, with: .color(.white.opacity(0.5)))
+
+            // Front of the orbit (lower half, crosses in front of the sphere).
+            ctx.stroke(arcPath(20.5, 200.5),
+                       with: .linearGradient(
+                        Gradient(colors: [Color(hex: "FF8A3D"), ORBTheme.accentDeep]),
+                        startPoint: orbit(20.5), endPoint: orbit(200.5)),
+                       style: StrokeStyle(lineWidth: scaled(5), lineCap: .round))
+
+            // Node riding the front of the orbit.
+            let nodeC = orbit(20.5)
+            let nodeR = scaled(7)
+            ctx.fill(Path(ellipseIn: CGRect(x: nodeC.x - nodeR, y: nodeC.y - nodeR,
+                                            width: nodeR * 2, height: nodeR * 2)),
+                     with: .color(ORBTheme.accentDeep))
         }
         .frame(width: size, height: size)
-        .shadow(color: ORBTheme.accent.opacity(0.45), radius: size * 0.18)
+        .shadow(color: ORBTheme.accent.opacity(0.45), radius: size * 0.16)
     }
 }

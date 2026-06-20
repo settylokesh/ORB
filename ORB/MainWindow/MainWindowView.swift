@@ -53,9 +53,10 @@ struct MainWindowView: View {
         let active = app.selectedTab == tab
         return Button(action: { app.selectedTab = tab }) {
             HStack(spacing: 10) {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.primary.opacity(0.55))
-                    .frame(width: 8, height: 8)
+                Image(systemName: icon(for: tab))
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 18)
+                    .foregroundStyle(active ? ORBTheme.accent : ORBTheme.ink2)
                 Text(tab.title).font(ORBTheme.ui(14, weight: .medium))
                 Spacer(minLength: 0)
             }
@@ -74,17 +75,29 @@ struct MainWindowView: View {
         .buttonStyle(.plain)
     }
 
+    private func icon(for tab: MainTab) -> String {
+        switch tab {
+        case .dashboard:   return "square.grid.2x2"
+        case .history:     return "clock.arrow.circlepath"
+        case .settings:    return "gearshape"
+        case .permissions: return "lock.shield"
+        case .about:       return "info.circle"
+        }
+    }
+
     private var systemCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let modelsReady = app.models.bothReady
+        return VStack(alignment: .leading, spacing: 8) {
             MonoLabel(text: "SYSTEM", size: 9.5)
             HStack(spacing: 7) {
-                Circle().fill(ORBTheme.success).frame(width: 7, height: 7)
+                Circle().fill(app.isBusy ? ORBTheme.warning : ORBTheme.success).frame(width: 7, height: 7)
                 Text("\(app.state == .idle ? "Idle" : "Active") · \(app.ram.displayedMB) MB RAM")
                     .font(ORBTheme.ui(11.5)).foregroundStyle(ORBTheme.ink2)
             }
             HStack(spacing: 7) {
-                Circle().fill(ORBTheme.success).frame(width: 7, height: 7)
-                Text("Models ready").font(ORBTheme.ui(11.5)).foregroundStyle(ORBTheme.ink2)
+                Circle().fill(modelsReady ? ORBTheme.success : ORBTheme.warning).frame(width: 7, height: 7)
+                Text(modelsReady ? "Models ready" : "Models not installed")
+                    .font(ORBTheme.ui(11.5)).foregroundStyle(ORBTheme.ink2)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
