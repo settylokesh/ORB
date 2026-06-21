@@ -59,6 +59,9 @@ struct IdleStateView: View {
             .font(ORBTheme.ui(13))
             .padding(.top, 5)
 
+            // Type a command instead of speaking it.
+            CommandInputField().padding(.top, 18)
+
             if !app.models.bothReady {
                 VStack(spacing: 8) {
                     Text("Models aren't installed yet")
@@ -113,5 +116,54 @@ struct IdleStateView: View {
         .frame(maxWidth: .infinity)
         .background(RoundedRectangle(cornerRadius: 8).fill(ORBTheme.card))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(ORBTheme.line))
+    }
+}
+
+/// Inline text entry: type a command and run it through the same pipeline as
+/// voice. Submits on Return or the send button; the button is disabled (and the
+/// field never fires) when there's nothing actionable to run.
+struct CommandInputField: View {
+    @EnvironmentObject private var app: AppState
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    private var canSend: Bool { AppState.normalizedCommand(text) != nil }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "text.cursor")
+                .font(.system(size: 12))
+                .foregroundStyle(ORBTheme.ink3)
+
+            TextField("Type a command…", text: $text)
+                .textFieldStyle(.plain)
+                .font(ORBTheme.ui(13))
+                .foregroundStyle(ORBTheme.ink)
+                .focused($focused)
+                .onSubmit(send)
+
+            Button(action: send) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 24, height: 24)
+                    .background(Circle().fill(canSend ? ORBTheme.accent : ORBTheme.ink3))
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSend)
+            .help("Run command")
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 10).fill(ORBTheme.card))
+        .overlay(RoundedRectangle(cornerRadius: 10)
+            .stroke(focused ? ORBTheme.accent.opacity(0.6) : ORBTheme.line))
+    }
+
+    private func send() {
+        // Only clear the field when something actionable was actually submitted,
+        // so an accidental Return on whitespace doesn't wipe in-progress typing.
+        guard canSend else { return }
+        app.submitTextCommand(text)
+        text = ""
     }
 }

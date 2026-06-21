@@ -173,6 +173,39 @@ final class AppState: ObservableObject {
         runPipeline(transcript: last.transcript)
     }
 
+    // MARK: - Text input
+
+    /// Normalizes raw typed input into a runnable command, or `nil` when there's
+    /// nothing actionable. Trims the ends and collapses any internal whitespace
+    /// runs (spaces, tabs, newlines) to single spaces so "  open   safari\n"
+    /// becomes "open safari". Single pass over the input — O(n) in its length.
+    static func normalizedCommand(_ raw: String) -> String? {
+        let command = raw.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return command.isEmpty ? nil : command
+    }
+
+    /// Run a typed command through the same plan → execute pipeline as voice,
+    /// skipping speech capture entirely. Only Gemma is required (Moonshine and
+    /// the microphone aren't), so a user can drive ORB with no mic permission.
+    func submitTextCommand(_ raw: String) {
+        // Ignore submissions while a command is already mid-flight; allow them
+        // from idle and from the success/failure result cards (same as voice).
+        guard !isBusy else { return }
+        guard let command = Self.normalizedCommand(raw) else {
+            errorMessage = "Type a command first."
+            return
+        }
+        guard models.gemma.isReady else {
+            errorMessage = ORBError.modelNotDownloaded("Gemma 4 E4B").errorDescription
+            openSetup()   // send the user to finish installing the model
+            return
+        }
+        errorMessage = nil
+        transcript = command
+        steps = []
+        runPipeline(transcript: command)
+    }
+
     // MARK: - Pipeline
 
     private func runPipeline(transcript: String) {
