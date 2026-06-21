@@ -44,7 +44,7 @@ final class ActionExecutor {
                     // other actions succeed if they ran without throwing. (Verifying
                     // every step is too slow and can spuriously fail real commands.)
                     if action.kind == .verify {
-                        let shot = try? await ScreenReader.capture()
+                        let shot = try? await ScreenReader.captureForModel()
                         if await llm.verifyStep(action, screenshot: shot) { succeeded = true; break }
                     } else {
                         succeeded = true; break

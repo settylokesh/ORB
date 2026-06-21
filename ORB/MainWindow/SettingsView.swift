@@ -176,6 +176,9 @@ struct SettingsView: View {
             SettingsRow(label: "Show glow border") {
                 Toggle("", isOn: $settings.showGlowBorder).toggleStyle(.switch).labelsHidden().tint(ORBTheme.accent)
             }
+            SettingsRow(label: "Free model RAM when idle") {
+                Toggle("", isOn: $settings.freeRAMWhenIdle).toggleStyle(.switch).labelsHidden().tint(ORBTheme.accent)
+            }
         }
     }
 

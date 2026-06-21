@@ -18,26 +18,44 @@ final class MLXGemmaEngine: LLMEngine {
 
     let displayName = "Gemma 4 E4B"
     private(set) var isReady = false
+    private(set) var isLoading = false
     private(set) var ramMB = 0
     private(set) var lastTokensPerSecond: Double = 0
 
     private let models: ModelManager
     private let fallback = ActionPlanner()
     private var container: ModelContainer?
+    /// The in-flight load, if any. Coalesces concurrent `load()`/`warmUp()` calls
+    /// (e.g. the warm-on-intent preload racing a command) so the ~4 GB container
+    /// is mapped exactly once instead of twice.
+    private var loadTask: Task<Void, Error>?
 
     init(models: ModelManager) { self.models = models }
 
     func load() async throws {
-        guard container == nil else { isReady = true; return }
-        let before = ProcessRAM.residentMB()
-        container = try await models.loadGemmaContainer()
-        ramMB = max(0, ProcessRAM.residentMB() - before)
-        isReady = true
+        if container != nil { isReady = true; return }
+        if let loadTask { try await loadTask.value; return }
+        isLoading = true
+        let task = Task { @MainActor [self] in
+            let before = ProcessRAM.residentMB()
+            container = try await models.loadGemmaContainer()
+            ramMB = max(0, ProcessRAM.residentMB() - before)
+            isReady = true
+        }
+        loadTask = task
+        defer { loadTask = nil; isLoading = false }
+        try await task.value
     }
+
+    /// Background preload used by the warm-on-intent path. Swallows errors (a
+    /// failed warm-up just means the first command loads inline, as before).
+    func warmUp() async { try? await load() }
 
     func unload() {
         container = nil
+        models.releaseGemmaContainer()
         isReady = false
+        ramMB = 0
     }
 
     // MARK: - Intent extraction

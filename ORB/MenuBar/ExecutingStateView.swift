@@ -11,20 +11,31 @@ struct ExecutingStateView: View {
     private var doneCount: Int { app.steps.filter { $0.status == .done }.count }
     private var currentIndex: Int { (app.steps.firstIndex { $0.status == .running } ?? doneCount) + 1 }
 
+    private var headline: String {
+        if app.isLoadingModel { return "Loading model…" }
+        return app.state == .planning ? "Planning…" : "Working…"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text(app.state == .planning ? "Planning…" : "Working…")
+                    Text(headline)
                         .font(ORBTheme.ui(13, weight: .semibold))
                 }
                 Spacer()
-                Text("STEP \(min(currentIndex, max(app.steps.count,1))) / \(app.steps.count)")
-                    .font(ORBTheme.mono(11)).foregroundStyle(ORBTheme.ink3)
+                if !app.isLoadingModel {
+                    Text("STEP \(min(currentIndex, max(app.steps.count,1))) / \(app.steps.count)")
+                        .font(ORBTheme.mono(11)).foregroundStyle(ORBTheme.ink3)
+                }
             }
 
-            Text(app.currentSummary.isEmpty ? app.transcript : app.currentSummary)
+            // While the model is loading there are no steps yet — explain the wait
+            // instead of showing a blank "Planning…" that looks like a freeze.
+            Text(app.isLoadingModel
+                 ? "Loading Gemma into memory — this only takes a moment."
+                 : (app.currentSummary.isEmpty ? app.transcript : app.currentSummary))
                 .font(ORBTheme.ui(14, weight: .medium))
                 .padding(.top, 16)
 

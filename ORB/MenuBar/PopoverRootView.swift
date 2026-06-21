@@ -26,6 +26,8 @@ struct PopoverRootView: View {
         .frame(width: 380)
         .background(.regularMaterial)
         .animation(.easeInOut(duration: 0.2), value: app.state)
+        // Opening the popover is intent to use ORB — start warming the models now.
+        .onAppear { app.warmUpForUse() }
     }
 }
 
@@ -141,6 +143,11 @@ struct CommandInputField: View {
                 .foregroundStyle(ORBTheme.ink)
                 .focused($focused)
                 .onSubmit(send)
+                // Focusing the field is intent to run a command — warm the model
+                // while the user types so submit doesn't wait on a cold load.
+                .onChange(of: focused) { _, isFocused in
+                    if isFocused { app.warmUpForUse() }
+                }
 
             Button(action: send) {
                 Image(systemName: "arrow.up")

@@ -13,6 +13,9 @@ import CoreGraphics
 protocol LLMEngine: AnyObject {
     var displayName: String { get }
     var isReady: Bool { get }
+    /// True while `load()` is bringing the weights into memory — lets the UI show
+    /// a real "loading model" state instead of a generic spinner.
+    var isLoading: Bool { get }
     /// Real resident footprint contributed by the model, in MB.
     var ramMB: Int { get }
     /// Throughput of the last generation in tokens/second (measured).
@@ -20,6 +23,8 @@ protocol LLMEngine: AnyObject {
 
     func load() async throws
     func unload()
+    /// Best-effort background preload (intent-to-use warm-up); never throws.
+    func warmUp() async
 
     /// Extract a structured intent from the transcript (+ optional screenshot).
     func extractIntent(from transcript: String, screenshot: CGImage?) async -> CommandIntent

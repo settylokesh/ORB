@@ -58,10 +58,17 @@ final class AppState: ObservableObject {
     @Published var currentSummary: String = ""
     @Published var lastRecord: CommandRecord?
     @Published var errorMessage: String?
+    /// True while the heavy Gemma container is loading into memory (warm-up or the
+    /// first command). Lets the UI say "Loading model" instead of "Planning…".
+    @Published var isLoadingModel = false
 
     private var runStart = Date()
     private var runTask: Task<Void, Never>?
+    private var idleUnloadTask: Task<Void, Never>?
     private var lastTranscript = ""
+
+    /// How long ORB stays idle before it frees the resident Gemma container.
+    private let idleUnloadDelay: UInt64 = 180_000_000_000   // 3 minutes
 
     var isBusy: Bool { state != .idle && state != .success && state != .failure }
 
@@ -78,6 +85,78 @@ final class AppState: ObservableObject {
                     isReady: models.moonshine.isReady, ramMB: stt.ramMB,
                     metric: stt.lastLatencyMS > 0 ? "\(stt.lastLatencyMS)" : "—",
                     metricLabel: "ms")
+    }
+
+    // MARK: - Warm-up & idle memory management
+
+    /// Preload the models the moment the user shows intent to use ORB (opens the
+    /// popover, focuses the command field, or starts listening) so the heavy
+    /// ~4 GB Gemma container is resident by the time a command actually arrives —
+    /// instead of being loaded inline on the first command with no feedback.
+    /// Idempotent and cheap; safe to call on every interaction.
+    func warmUpForUse() {
+        cancelIdleUnload()
+        if models.gemma.isReady, !llm.isReady, !llm.isLoading {
+            isLoadingModel = true
+            Task { [weak self] in
+                guard let self else { return }
+                await self.llm.warmUp()
+                self.isLoadingModel = false
+                // Re-arm reclaim in case the user warmed ORB but ran nothing.
+                self.armIdleUnload()
+            }
+        } else {
+            // Already resident (or nothing to warm): keep idle reclaim armed so a
+            // glance at the popover doesn't pin the model in memory forever.
+            armIdleUnload()
+        }
+        if models.moonshine.isReady, !stt.isReady {
+            Task { [weak self] in try? await self?.stt.load() }
+        }
+    }
+
+    /// After a spell of inactivity, drop the resident models to reclaim memory
+    /// (controlled by the "Free model RAM when idle" setting). The next warm-up
+    /// brings them straight back, so this is invisible in normal use.
+    private func armIdleUnload() {
+        cancelIdleUnload()
+        guard settings.freeRAMWhenIdle else { return }
+        idleUnloadTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: self?.idleUnloadDelay ?? 180_000_000_000)
+            guard let self, !Task.isCancelled else { return }
+            // Only unload if we're genuinely sitting idle (not mid-command).
+            switch self.state {
+            case .idle, .success, .failure:
+                self.llm.unload()
+                self.stt.unload()
+                self.ram.setPhase(.idle)
+            default:
+                break
+            }
+        }
+    }
+
+    private func cancelIdleUnload() {
+        idleUnloadTask?.cancel()
+        idleUnloadTask = nil
+    }
+
+    /// Whether a command plausibly needs to *see* the screen to be planned well.
+    /// Commands that map to direct, non-visual actions (open/quit an app, set the
+    /// volume, take a screenshot, find a file, run a search) are planned text-only,
+    /// which skips the costly vision encode entirely. Anything that references the
+    /// screen ("click", "this", "the button") still gets a screenshot, and we
+    /// default to grounding when the intent is ambiguous.
+    private func visionNeeded(for transcript: String) -> Bool {
+        let t = transcript.lowercased()
+        let visualCues = ["click", "tap", "press the", "scroll", "button", "this ", "that ",
+                          " here", "on screen", "on the screen", "what's on", "whats on",
+                          "read the", "select ", "highlight", "drag"]
+        if visualCues.contains(where: t.contains) { return true }
+        let nonVisual = ["open ", "launch ", "quit ", "close ", "volume", "mute", "unmute",
+                         "screenshot", "screen shot", "find ", "search ", "play ", "pause", "go to "]
+        if nonVisual.contains(where: t.contains) { return false }
+        return true   // unsure → ground the plan in a screenshot
     }
 
     // MARK: - Activation
@@ -114,7 +193,9 @@ final class AppState: ObservableObject {
         state = .listening
         ram.setPhase(.listening)
 
-        Task { try? await stt.load() }
+        // Warm both models now, in the background, while the user is still
+        // speaking — Gemma is usually resident by the time the transcript lands.
+        warmUpForUse()
         stt.beginStreaming { [weak self] partial in
             self?.transcript = partial
         }
@@ -164,8 +245,10 @@ final class AppState: ObservableObject {
         audio.stop()
         glow?.set(.hidden)
         ram.setPhase(.idle)
+        isLoadingModel = false
         state = .idle
         steps = []
+        armIdleUnload()
     }
 
     func repeatLast() {
@@ -220,12 +303,18 @@ final class AppState: ObservableObject {
 
     private func run(transcript: String) async {
         // 1. Planning
+        cancelIdleUnload()
         state = .planning
         ram.setPhase(.planning)
         glow?.set(settings.showGlowBorder ? .planning : .hidden)
         do {
+            // Reflect a real "loading model" state when the warm-up hasn't already
+            // brought Gemma resident (e.g. a typed command straight from idle).
+            if !llm.isReady { isLoadingModel = true }
             try await llm.load()
+            isLoadingModel = false
         } catch {
+            isLoadingModel = false
             errorMessage = ORBError.modelNotDownloaded("Gemma 4 E4B").errorDescription
             state = .failure
             glow?.set(.failure)
@@ -234,7 +323,11 @@ final class AppState: ObservableObject {
             return
         }
 
-        let screenshot = try? await ScreenReader.capture()
+        // Only pay for a (downscaled) screenshot when the command needs the model
+        // to actually see the screen — most commands plan fine from text alone.
+        let screenshot = visionNeeded(for: transcript)
+            ? try? await ScreenReader.captureForModel()
+            : nil
         let intent = await llm.extractIntent(from: transcript, screenshot: screenshot)
         currentSummary = intent.summary
         steps = intent.actions.map { ActionStep(title: $0.title) }
@@ -311,9 +404,11 @@ final class AppState: ObservableObject {
     }
 
     private func finishCommon() {
-        // Keep Gemma resident between commands for responsiveness; MLX reloads
-        // from cache are non-trivial. RAM is reported live on the dashboard.
+        // Keep Gemma resident between commands for responsiveness, but arm the
+        // idle-unload timer so a long stretch of inactivity reclaims its memory.
+        // RAM is reported live on the dashboard.
         ram.setPhase(.idle)
+        armIdleUnload()
     }
 
     private func finishIdle() {

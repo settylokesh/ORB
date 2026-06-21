@@ -295,6 +295,13 @@ final class ModelManager: ObservableObject {
         return container
     }
 
+    /// Drop the resident Gemma container to reclaim its (~4 GB) memory. The model
+    /// stays downloaded, so `gemma` remains `.ready`; the next `loadGemmaContainer`
+    /// re-maps it from disk. Used by the engine's idle auto-unload.
+    func releaseGemmaContainer() {
+        gemmaContainer = nil
+    }
+
     // MARK: - Hugging Face metadata
 
     private func hfURL(_ repo: String, _ path: String) -> URL {

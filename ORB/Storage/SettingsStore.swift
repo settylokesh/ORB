@@ -29,6 +29,11 @@ final class SettingsStore: ObservableObject {
     @Published var confirmBeforeExecuting: Bool { didSet { save(\.confirmBeforeExecuting, "confirmBeforeExecuting") } }
     @Published var showGlowBorder: Bool { didSet { save(\.showGlowBorder, "showGlowBorder") } }
 
+    // Performance: free the resident Gemma container (~4 GB) after a spell of
+    // inactivity. The warm-on-intent preload re-loads it the moment you reach for
+    // ORB again, so idle RAM stays low without a slow first command.
+    @Published var freeRAMWhenIdle: Bool { didSet { save(\.freeRAMWhenIdle, "freeRAMWhenIdle") } }
+
     // Notifications
     @Published var speakResult: Bool { didSet { save(\.speakResult, "speakResult") } }
     @Published var bannerNotifications: Bool { didSet { save(\.bannerNotifications, "bannerNotifications") } }
@@ -54,6 +59,7 @@ final class SettingsStore: ObservableObject {
         maxRetries            = d.object(forKey: "maxRetries") as? Int ?? 2
         confirmBeforeExecuting = d.object(forKey: "confirmBeforeExecuting") as? Bool ?? false
         showGlowBorder        = d.object(forKey: "showGlowBorder") as? Bool ?? true
+        freeRAMWhenIdle       = d.object(forKey: "freeRAMWhenIdle") as? Bool ?? true
         speakResult           = d.object(forKey: "speakResult") as? Bool ?? false
         bannerNotifications   = d.object(forKey: "bannerNotifications") as? Bool ?? true
         soundOnCompletion     = d.object(forKey: "soundOnCompletion") as? Bool ?? true
