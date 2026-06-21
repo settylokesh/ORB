@@ -19,6 +19,8 @@ struct DashboardView: View {
                         Button(action: { app.activate() }) { OrbView(size: 128) }
                             .buttonStyle(.plain)
                         MonoLabel(text: "⌘ L TO TALK", color: ORBTheme.ink2, size: 11)
+                        // Type a command instead of speaking it.
+                        CommandInputField().frame(width: 176)
                     }
 
                     VStack(alignment: .leading, spacing: 0) {
