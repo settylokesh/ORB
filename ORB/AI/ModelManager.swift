@@ -107,15 +107,24 @@ final class ModelManager: ObservableObject {
     /// Reconcile published state with what is already on disk, without clobbering
     /// an in-flight or paused download.
     func refresh() {
-        moonshine = reconcile(moonshine, present: moonshineFilesPresent)
-        gemma = reconcile(gemma, present: gemmaFilesPresent)
+        moonshine = reconcile(moonshine, present: moonshineFilesPresent, dir: moonshineDir)
+        if moonshine.isPaused, let st = loadResumeState(dir: moonshineDir) { moonshineBytes = st }
+        gemma = reconcile(gemma, present: gemmaFilesPresent, dir: gemmaDir)
+        if gemma.isPaused, let st = loadResumeState(dir: gemmaDir) { gemmaBytes = st }
     }
 
-    private func reconcile(_ phase: Phase, present: Bool) -> Phase {
-        if present { return .ready }
+    private func reconcile(_ phase: Phase, present: Bool, dir: URL) -> Phase {
+        if present { clearResumeState(dir: dir); return .ready }
         switch phase {
         case .downloading, .paused, .failed: return phase
-        default: return .notDownloaded
+        default:
+            // Fresh launch: a download interrupted by quitting (or a failure) left a
+            // saved partial on disk — surface it as resumable rather than as a brand
+            // new "not downloaded", so the user continues instead of starting over.
+            if let st = loadResumeState(dir: dir) {
+                return .paused(st.1 > 0 ? Double(st.0) / Double(st.1) : 0)
+            }
+            return .notDownloaded
         }
     }
 
@@ -143,7 +152,10 @@ final class ModelManager: ObservableObject {
         moonshineTask = Task { [weak self] in await self?.runMoonshine() }
     }
 
-    func pauseMoonshine() { moonshineDownloader?.pause() }
+    func pauseMoonshine() {
+        moonshineDownloader?.pause()
+        saveResumeState(dir: moonshineDir, bytes: moonshineBytes)
+    }
 
     func resumeMoonshine() {
         guard moonshine.isPaused else { downloadMoonshine(); return }
@@ -157,7 +169,10 @@ final class ModelManager: ObservableObject {
         gemmaTask = Task { [weak self] in await self?.runGemma() }
     }
 
-    func pauseGemma() { gemmaDownloader?.pause() }
+    func pauseGemma() {
+        gemmaDownloader?.pause()
+        saveResumeState(dir: gemmaDir, bytes: gemmaBytes)
+    }
 
     func resumeGemma() {
         guard gemma.isPaused else { downloadGemma(); return }
@@ -165,17 +180,38 @@ final class ModelManager: ObservableObject {
         gemmaTask = Task { [weak self] in await self?.runGemma() }
     }
 
+    /// True while either model is actively transferring (used to decide whether the
+    /// app needs to capture resume state before quitting).
+    var hasActiveDownload: Bool { moonshine.isDownloading || gemma.isDownloading }
+
+    /// Capture and persist resume state for any in-flight downloads so the next
+    /// launch continues instead of restarting at byte 0. Call from the app's
+    /// `applicationShouldTerminate`. Safe to call when nothing is downloading.
+    func prepareForTermination() async {
+        if let dl = moonshineDownloader {
+            await dl.suspendForTermination()
+            saveResumeState(dir: moonshineDir, bytes: moonshineBytes)
+        }
+        if let dl = gemmaDownloader {
+            await dl.suspendForTermination()
+            saveResumeState(dir: gemmaDir, bytes: gemmaBytes)
+        }
+    }
+
     private func runMoonshine() async {
         do {
             let dl = try await moonshineDownloaderInstance()
             try await dl.run()
+            // Ignore a late completion if a folder change / delete superseded us.
+            guard moonshineDownloader === dl else { return }
+            clearResumeState(dir: moonshineDir)
             moonshine = .ready
             moonshineBytes = (dl.grandTotal, dl.grandTotal)
             moonshineDownloader = nil
         } catch is ModelDownloader.DownloadPaused {
-            moonshine = .paused(moonshine.fraction)
+            if moonshine.isDownloading { moonshine = .paused(moonshine.fraction) }
         } catch {
-            moonshine = .failed(friendly(error))
+            if moonshine.isDownloading { moonshine = .failed(friendly(error)) }
         }
     }
 
@@ -183,14 +219,16 @@ final class ModelManager: ObservableObject {
         do {
             let dl = try await gemmaDownloaderInstance()
             try await dl.run()
+            guard gemmaDownloader === dl else { return }
             UserDefaults.standard.set(true, forKey: Self.gemmaCompleteKey)
+            clearResumeState(dir: gemmaDir)
             gemma = .ready
             gemmaBytes = (dl.grandTotal, dl.grandTotal)
             gemmaDownloader = nil
         } catch is ModelDownloader.DownloadPaused {
-            gemma = .paused(gemma.fraction)
+            if gemma.isDownloading { gemma = .paused(gemma.fraction) }
         } catch {
-            gemma = .failed(friendly(error))
+            if gemma.isDownloading { gemma = .failed(friendly(error)) }
         }
     }
 
@@ -283,6 +321,30 @@ final class ModelManager: ObservableObject {
         if (error as? URLError)?.code == .notConnectedToInternet { return "No internet connection." }
         return error.localizedDescription
     }
+
+    // MARK: - Resume state (downloaded/total) — drives the launch "PAUSED %" label
+
+    private static let stateFile = ".orb-download-state.json"
+    private func stateURL(_ dir: URL) -> URL { dir.appendingPathComponent(Self.stateFile) }
+
+    /// Persist a model's byte progress so the next launch can show the right % and
+    /// offer to resume. A complete or empty download clears the state instead.
+    private func saveResumeState(dir: URL, bytes: (Int64, Int64)) {
+        guard bytes.1 > 0, bytes.0 > 0, bytes.0 < bytes.1 else { clearResumeState(dir: dir); return }
+        guard let data = try? JSONEncoder().encode(["downloaded": bytes.0, "total": bytes.1]) else { return }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? data.write(to: stateURL(dir), options: .atomic)
+    }
+
+    private func loadResumeState(dir: URL) -> (Int64, Int64)? {
+        guard let data = try? Data(contentsOf: stateURL(dir)),
+              let dict = try? JSONDecoder().decode([String: Int64].self, from: data),
+              let downloaded = dict["downloaded"], let total = dict["total"], total > 0
+        else { return nil }
+        return (downloaded, total)
+    }
+
+    private func clearResumeState(dir: URL) { try? FileManager.default.removeItem(at: stateURL(dir)) }
 
     // MARK: - Folder access & management
 

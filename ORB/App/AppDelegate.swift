@@ -53,6 +53,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    /// If a model is still downloading, capture its resume token to disk before
+    /// quitting so the next launch continues from where it left off instead of
+    /// restarting at byte 0. Bounded by a timeout so quitting never hangs.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard appState.models.hasActiveDownload else { return .terminateNow }
+        let models = appState.models
+        Task { @MainActor in
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await models.prepareForTermination() }
+                group.addTask { try? await Task.sleep(nanoseconds: 5_000_000_000) }
+                _ = await group.next()    // whichever completes first
+                group.cancelAll()
+            }
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         GlobalHotkeyManager.shared.unregister()
     }

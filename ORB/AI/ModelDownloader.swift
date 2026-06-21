@@ -15,6 +15,16 @@
 //  budget refreshes whenever forward progress is made, so a long download survives
 //  a flaky connection and only gives up if it can't advance at all.
 //
+//  Crucially, the resume token is *persisted to disk* (a small `.orbresume`
+//  sidecar next to each destination file) whenever a transfer is interrupted —
+//  on pause, on a dropped connection, and when the app is quitting mid-download
+//  (see `suspendForTermination`). On the next launch a fresh downloader picks up
+//  that sidecar and continues from the saved offset instead of starting over. If
+//  a saved token turns out to be unusable (e.g. the system temp file it points at
+//  was purged after a reboot), the file falls back to a clean restart rather than
+//  looping on a dead token. Force-quit / crash can't capture a token, so only the
+//  file that was in flight restarts; already-finished files are always kept.
+//
 
 import Foundation
 
@@ -50,7 +60,11 @@ final class ModelDownloader: NSObject, @unchecked Sendable {
 
     // Per-file delegate plumbing (only one file is ever in flight).
     private var currentTask: URLSessionDownloadTask?
+    private var currentFile: FileSpec?        // which file the in-flight task is for
     private var continuation: CheckedContinuation<URL, Error>?
+
+    /// Filename suffix for the on-disk resume sidecar written next to a destination.
+    private static let resumeSuffix = "orbresume"
 
     init(files: [FileSpec]) {
         self.files = files
@@ -85,13 +99,29 @@ final class ModelDownloader: NSObject, @unchecked Sendable {
     }
 
     /// Pause the in-flight file (completed files stay on disk; the current file
-    /// resumes from where it left off via the system's resume data).
+    /// resumes from where it left off via the system's resume data, which is also
+    /// written to disk so the pause survives an app restart).
     func pause() {
         let task = sync { () -> URLSessionDownloadTask? in isPaused = true; return currentTask }
         task?.cancel(byProducingResumeData: { [weak self] data in
             guard let self, let data else { return }
-            self.sync { if self.pausedResumeData == nil { self.pausedResumeData = data } }
+            self.stash(data)
         })
+    }
+
+    /// Capture and persist the in-flight file's resume token, awaiting the system
+    /// serialising it. Call from the app's `applicationShouldTerminate` so a quit
+    /// during an active download continues on the next launch instead of from 0.
+    /// Returns immediately when nothing is downloading.
+    func suspendForTermination() async {
+        let task = sync { () -> URLSessionDownloadTask? in isPaused = true; return currentTask }
+        guard let task else { return }
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            task.cancel(byProducingResumeData: { [weak self] data in
+                if let self, let data { self.stash(data) }
+                cont.resume()
+            })
+        }
     }
 
     /// Stop everything and release the session. Call when discarding a downloader
@@ -111,22 +141,42 @@ final class ModelDownloader: NSObject, @unchecked Sendable {
         var attempt = 0
         while true {
             let markBefore = sync { lastReported }
+            // Did this attempt start from a saved offset (in-memory or on-disk token)?
+            let usedResume = sync { pausedResumeData != nil } || loadResume(for: f) != nil
             do {
                 let stableTemp = try await startTransfer(f)
                 try? FileManager.default.removeItem(at: f.dest)
                 try FileManager.default.moveItem(at: stableTemp, to: f.dest)
+                clearResume(for: f)                  // file is on disk — drop its saved token
                 return
             } catch is DownloadPaused {
-                throw DownloadPaused.paused          // user paused — stop, keep resume data
+                throw DownloadPaused.paused          // user paused / quit — stop, keep resume data
             } catch {
                 // The connection dropped (or timed out) mid-transfer. The system's
-                // resume token, if any, is already stashed in `pausedResumeData` by
+                // resume token, if any, was already stashed (memory + disk) by
                 // `didCompleteWithError`, so the next attempt continues from where it
-                // stopped rather than at byte 0. Any forward progress since the last
-                // attempt refreshes the retry budget.
-                if sync({ lastReported }) > markBefore { attempt = 0 }
-                guard Self.isRetryable(error), attempt < maxRetriesWithoutProgress else { throw error }
+                // stopped rather than at byte 0.
+                let progressed = sync { lastReported } > markBefore
+                if progressed { attempt = 0 }      // forward progress refreshes the budget
                 attempt += 1
+
+                // A *resumed* attempt that fails without moving a single byte points at
+                // an unusable token (its temp file was purged after a reboot, the byte
+                // range was rejected, …). Drop it so the next try restarts the file
+                // cleanly instead of dying on a dead token forever — immediately when
+                // the error isn't even a normal transient one, otherwise after a couple
+                // of tries in case it was just a blip.
+                let tokenSuspect = usedResume && !progressed
+                    && (!Self.isRetryable(error) || attempt >= 2)
+                if tokenSuspect {
+                    sync { pausedResumeData = nil }
+                    clearResume(for: f)
+                }
+
+                // Keep going for transient failures, or for a restart we just forced,
+                // until the no-progress budget runs out; otherwise surface the error.
+                guard tokenSuspect || Self.isRetryable(error),
+                      attempt < maxRetriesWithoutProgress else { throw error }
 
                 // Back off before retrying, but bail out promptly if the user paused
                 // (or the task was cancelled, e.g. the models folder changed) while
@@ -138,13 +188,16 @@ final class ModelDownloader: NSObject, @unchecked Sendable {
         }
     }
 
-    /// Start one transfer and await its stable temp file. Reuses the system resume
-    /// token from a prior pause/interruption when present, otherwise starts fresh.
+    /// Start one transfer and await its stable temp file. Reuses the resume token
+    /// from a prior pause/interruption — first the in-memory copy, then the on-disk
+    /// sidecar from a previous app session — otherwise starts fresh.
     private func startTransfer(_ f: FileSpec) async throws -> URL {
-        try await withCheckedThrowingContinuation { cont in
+        let diskResume = loadResume(for: f)
+        return try await withCheckedThrowingContinuation { cont in
             sync {
                 self.continuation = cont
-                let resume = self.pausedResumeData
+                self.currentFile = f
+                let resume = self.pausedResumeData ?? diskResume
                 self.pausedResumeData = nil
                 let task = resume.map { self.session.downloadTask(withResumeData: $0) }
                     ?? self.session.downloadTask(with: f.remote)
@@ -211,6 +264,46 @@ final class ModelDownloader: NSObject, @unchecked Sendable {
         let secs = min(1 << min(max(attempt - 1, 0), 5), 30)   // 1,2,4,8,16,30
         return UInt64(secs) * 1_000_000_000
     }
+
+    // MARK: - Resume token persistence
+
+    /// Keep a freshly produced resume token in memory (for the current run) *and*
+    /// on disk next to its destination (so it survives an app restart). Idempotent.
+    private func stash(_ data: Data) {
+        let dest = sync { () -> URL? in
+            if pausedResumeData == nil { pausedResumeData = data }
+            return currentFile?.dest
+        }
+        guard let dest else { return }
+        try? Self.writeResumeData(data, for: dest)
+    }
+
+    private func loadResume(for f: FileSpec) -> Data? { Self.loadResumeData(for: f.dest) }
+    private func clearResume(for f: FileSpec) { Self.clearResumeData(for: f.dest) }
+
+    /// The resume sidecar path for a destination file (`foo.bin` → `foo.bin.orbresume`).
+    static func resumeSidecar(for dest: URL) -> URL { dest.appendingPathExtension(resumeSuffix) }
+
+    /// Whether a saved resume token exists for `dest` — lets callers detect a
+    /// resumable partial on launch without constructing a downloader.
+    static func hasResumeData(for dest: URL) -> Bool {
+        FileManager.default.fileExists(atPath: resumeSidecar(for: dest).path)
+    }
+
+    static func loadResumeData(for dest: URL) -> Data? {
+        try? Data(contentsOf: resumeSidecar(for: dest))
+    }
+
+    static func clearResumeData(for dest: URL) {
+        try? FileManager.default.removeItem(at: resumeSidecar(for: dest))
+    }
+
+    private static func writeResumeData(_ data: Data, for dest: URL) throws {
+        let url = resumeSidecar(for: dest)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: url, options: .atomic)
+    }
 }
 
 // MARK: - URLSessionDownloadDelegate
@@ -245,11 +338,12 @@ extension ModelDownloader: URLSessionDownloadDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard let error else { return }
         // Preserve the resume token on ANY interruption — a manual pause OR a
-        // dropped connection — so the transfer can continue from where it stopped.
-        // (Previously it was kept only for manual pauses, so a network drop threw
+        // dropped connection — in memory *and* on disk, so the transfer can continue
+        // from where it stopped, even after the app is relaunched. (Previously it was
+        // kept only in memory for manual pauses, so a network drop — or a quit — threw
         // the partial download away and the next attempt restarted at byte 0.)
         if let data = (error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data {
-            sync { if pausedResumeData == nil { pausedResumeData = data } }
+            stash(data)
         }
         let paused = sync { isPaused }
         finish(.failure(paused ? DownloadPaused.paused : error))
