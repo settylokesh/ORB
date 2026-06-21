@@ -113,13 +113,21 @@ struct OnboardingView: View {
                             download: { app.models.downloadMoonshine() },
                             pause: { app.models.pauseMoonshine() },
                             resume: { app.models.resumeMoonshine() })
-                DownloadRow(name: "Gemma 4 E4B · 4-bit", subtitle: "VISION + INTENT · MLX",
+                // Pick which Gemma drives automation, then download it. The row
+                // below follows the selection (E4B via MLX, or the Edge Gallery
+                // E2B `.litertlm` via LiteRT-LM).
+                VStack(alignment: .leading, spacing: 9) {
+                    MonoLabel(text: "AUTOMATION MODEL")
+                    AutomationModelPicker()
+                }
+                DownloadRow(name: app.models.selectedGemma.menuLabel,
+                            subtitle: app.models.selectedGemma.subtitle,
                             phase: app.models.gemma, bytes: app.models.gemmaBytes,
                             download: { app.models.downloadGemma() },
                             pause: { app.models.pauseGemma() },
                             resume: { app.models.resumeGemma() })
             }
-            .frame(width: 460).padding(.top, 30)
+            .frame(width: 460).padding(.top, 26)
             Spacer()
             VStack(spacing: 10) {
                 Button(app.models.bothReady ? "Continue" : "Continue without models") { step = 5 }
@@ -309,6 +317,46 @@ struct DownloadRow: View {
     private static func fmt(_ b: Int64) -> String {
         let mb = Double(b) / 1_048_576
         return mb >= 1024 ? String(format: "%.1f GB", mb / 1024) : String(format: "%.0f MB", mb)
+    }
+}
+
+/// Choose which Gemma variant drives automation. Tapping a card makes it the
+/// active model (`AppState.selectAutomationModel`); a check marks installed ones.
+/// Shared by onboarding and Settings.
+struct AutomationModelPicker: View {
+    @EnvironmentObject private var app: AppState
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(GemmaVariant.allCases) { v in
+                let selected = app.models.selectedGemma == v
+                Button { app.selectAutomationModel(v) } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 5) {
+                            Text(v.displayName).font(ORBTheme.ui(13, weight: .semibold))
+                            Spacer(minLength: 0)
+                            if app.models.phase(for: v).isReady {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(ORBTheme.success).font(.system(size: 11))
+                            } else if selected {
+                                Image(systemName: "arrow.down.circle")
+                                    .foregroundStyle(ORBTheme.accent).font(.system(size: 11))
+                            }
+                        }
+                        Text(v.blurb).font(ORBTheme.mono(9)).foregroundStyle(ORBTheme.ink3)
+                            .lineLimit(1).minimumScaleFactor(0.8)
+                        Text(v.approxSizeLabel).font(ORBTheme.mono(9, weight: .semibold))
+                            .foregroundStyle(selected ? ORBTheme.accent : ORBTheme.ink3)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 11).padding(.vertical, 9)
+                    .background(RoundedRectangle(cornerRadius: 9).fill(selected ? ORBTheme.accentSoft : ORBTheme.card))
+                    .overlay(RoundedRectangle(cornerRadius: 9)
+                        .stroke(selected ? ORBTheme.accent : ORBTheme.line, lineWidth: selected ? 1.5 : 1))
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 }
 

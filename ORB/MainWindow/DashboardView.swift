@@ -49,7 +49,7 @@ struct DashboardView: View {
                 // Model cards
                 HStack(spacing: 14) {
                     modelCard(app.gemmaStatus, phase: app.models.gemma,
-                              bytes: app.models.gemmaBytes, approxSize: "~4.9 GB",
+                              bytes: app.models.gemmaBytes, approxSize: app.models.selectedGemma.approxSizeLabel,
                               download: { app.models.downloadGemma() },
                               pause: { app.models.pauseGemma() },
                               resume: { app.models.resumeGemma() })

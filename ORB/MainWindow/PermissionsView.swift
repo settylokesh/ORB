@@ -120,7 +120,7 @@ struct AboutView: View {
             VStack(spacing: 4) {
                 Text("Version 1.0").font(ORBTheme.mono(12)).foregroundStyle(ORBTheme.ink3)
                 Text("100% LOCAL · NO ACCOUNT · NO CLOUD").font(ORBTheme.mono(11)).foregroundStyle(ORBTheme.ink3)
-                Text("Moonshine STT · Gemma 4 E4B (MLX)").font(ORBTheme.mono(11)).foregroundStyle(ORBTheme.ink3)
+                Text("Moonshine STT · Gemma 4 E4B (MLX) / E2B (LiteRT)").font(ORBTheme.mono(11)).foregroundStyle(ORBTheme.ink3)
             }
             .padding(.top, 6)
             Spacer()

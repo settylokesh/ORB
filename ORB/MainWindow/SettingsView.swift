@@ -62,9 +62,21 @@ struct SettingsView: View {
             SettingsRow(label: "Speech-to-text") {
                 modelTag("Moonshine Base", ready: app.models.moonshine.isReady)
             }
-            SettingsRow(label: "Language model") {
-                modelTag("Gemma 4 E4B · 4-bit", ready: app.models.gemma.isReady)
+            // Pick the automation model and download it inline. The row follows the
+            // selection — E4B (Apple MLX) or the Edge Gallery E2B `.litertlm`
+            // (LiteRT-LM).
+            VStack(alignment: .leading, spacing: 11) {
+                Text("Automation model").font(ORBTheme.ui(13))
+                AutomationModelPicker()
+                DownloadRow(name: app.models.selectedGemma.menuLabel,
+                            subtitle: app.models.selectedGemma.subtitle,
+                            phase: app.models.gemma, bytes: app.models.gemmaBytes,
+                            download: { app.models.downloadGemma() },
+                            pause: { app.models.pauseGemma() },
+                            resume: { app.models.resumeGemma() })
             }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .overlay(Divider(), alignment: .top)
         }
     }
 

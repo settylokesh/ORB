@@ -20,21 +20,41 @@ final class AppState: ObservableObject {
     let ram = RAMManager()
     let models = ModelManager()
 
-    // Real on-device engines (Moonshine via ONNX, Gemma 4 E4B via MLX).
+    // Real on-device engines. Speech-to-text is Moonshine (ONNX). Automation runs
+    // on whichever Gemma the user selected: E4B via Apple MLX, or the Edge Gallery
+    // E2B `.litertlm` via LiteRT-LM. Both engines are kept; `llm` resolves to the
+    // one for the selected runtime.
     let stt: STTEngine
-    let llm: LLMEngine
+    private let mlxEngine: MLXGemmaEngine
+    private let litertEngine: LiteRTGemmaEngine
     private let audio = AudioCaptureEngine()
     private lazy var executor = ActionExecutor(llm: llm)
+
+    /// The engine that runs the currently-selected automation model.
+    var llm: LLMEngine {
+        models.selectedGemma.runtime == .litert ? litertEngine : mlxEngine
+    }
 
     private var cancellables = Set<AnyCancellable>()
 
     init() {
         stt = MoonshineSTT(models: models)
-        llm = MLXGemmaEngine(models: models)
+        mlxEngine = MLXGemmaEngine(models: models)
+        litertEngine = LiteRTGemmaEngine(models: models)
         // Re-publish when the model manager changes so download progress is live.
         models.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }
             .store(in: &cancellables)
+    }
+
+    /// Switch which Gemma drives automation. Drops both resident engines so the
+    /// next command loads the newly-selected model (and reclaims the old one).
+    func selectAutomationModel(_ v: GemmaVariant) {
+        guard models.selectedGemma != v else { return }
+        models.selectedGemma = v
+        mlxEngine.unload()
+        litertEngine.unload()
+        isLoadingModel = false
     }
 
     /// Set by AppDelegate once the overlay window exists.
@@ -75,7 +95,8 @@ final class AppState: ObservableObject {
     // MARK: - Model status (for dashboard / idle pills)
 
     var gemmaStatus: ModelStatus {
-        ModelStatus(name: "Gemma 4 E4B", subtitle: "VISION + INTENT · MLX",
+        let v = models.selectedGemma
+        return ModelStatus(name: v.displayName, subtitle: v.subtitle,
                     isReady: models.gemma.isReady, ramMB: llm.ramMB,
                     metric: llm.lastTokensPerSecond > 0 ? String(format: "%.0f", llm.lastTokensPerSecond) : "—",
                     metricLabel: "tok/s")
@@ -127,7 +148,10 @@ final class AppState: ObservableObject {
             // Only unload if we're genuinely sitting idle (not mid-command).
             switch self.state {
             case .idle, .success, .failure:
-                self.llm.unload()
+                // Drop both automation engines (only one is ever resident in
+                // normal use; freeing both is harmless and covers edge cases).
+                self.mlxEngine.unload()
+                self.litertEngine.unload()
                 self.stt.unload()
                 self.ram.setPhase(.idle)
             default:
@@ -279,7 +303,7 @@ final class AppState: ObservableObject {
             return
         }
         guard models.gemma.isReady else {
-            errorMessage = ORBError.modelNotDownloaded("Gemma 4 E4B").errorDescription
+            errorMessage = ORBError.modelNotDownloaded(models.selectedGemma.displayName).errorDescription
             openSetup()   // send the user to finish installing the model
             return
         }
@@ -315,7 +339,10 @@ final class AppState: ObservableObject {
             isLoadingModel = false
         } catch {
             isLoadingModel = false
-            errorMessage = ORBError.modelNotDownloaded("Gemma 4 E4B").errorDescription
+            // Surface the model's own message (e.g. "not downloaded", or the
+            // LiteRT-LM "add the package" hint) rather than a fixed E4B string.
+            errorMessage = (error as? ORBError)?.errorDescription
+                ?? ORBError.modelNotDownloaded(models.selectedGemma.displayName).errorDescription
             state = .failure
             glow?.set(.failure)
             finishCommon()
@@ -349,6 +376,7 @@ final class AppState: ObservableObject {
         ram.setPhase(.executing)
         glow?.set(settings.showGlowBorder ? .executing : .hidden)
 
+        executor.use(llm)   // follow the selected automation model (MLX or LiteRT)
         executor.actionDelay = settings.actionDelay
         executor.maxRetries = settings.maxRetries
         executor.onStepStatus = { [weak self] index, status in

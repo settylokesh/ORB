@@ -15,7 +15,9 @@ final class ActionExecutor {
     var actionDelay: TimeInterval = 0.4
     var maxRetries: Int = 2
 
-    private let llm: LLMEngine
+    /// The engine used for visual step verification. Swappable so the executor
+    /// follows whichever automation model (MLX or LiteRT) is currently selected.
+    private var llm: LLMEngine
     private let fileSearch = FileSearchEngine()
 
     /// Reports (stepIndex, newStatus) so the UI can update live.
@@ -26,6 +28,9 @@ final class ActionExecutor {
     var isCancelled = false
 
     init(llm: LLMEngine) { self.llm = llm }
+
+    /// Point the executor at the engine for the currently-selected model.
+    func use(_ engine: LLMEngine) { llm = engine }
 
     /// Executes all actions in order. Throws on unrecoverable failure.
     func execute(_ actions: [PlannedAction]) async throws {

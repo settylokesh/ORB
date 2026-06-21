@@ -2,15 +2,17 @@
 //  ModelManager.swift
 //  ORB
 //
-//  Owns the two real on-device models and their lifecycle:
+//  Owns the on-device models and their lifecycle:
 //    • Moonshine (base) — streaming speech-to-text, ONNX Runtime
-//    • Gemma 4 E4B (4-bit) — vision + intent, MLX
+//    • Gemma 4 (4-bit) — vision + intent, MLX. Two interchangeable variants are
+//      offered: E4B (larger, most capable) and E2B (the lighter mobile/edge
+//      variant Google ships in the AI Edge Gallery). Both are downloadable; the
+//      one the user selects drives automation.
 //
-//  Both models are downloaded with our own pausable URLSession downloader
-//  (see ModelDownloader) so progress is real, downloads resume, and each model
-//  can be paused independently. Everything lands in one user-visible folder
-//  (relocatable in Settings). Gemma is loaded from that local folder — no
-//  network is touched at load time.
+//  Every model is downloaded with our own pausable URLSession downloader (see
+//  ModelDownloader) so progress is real, downloads resume, and each model can be
+//  paused independently. Everything lands in one user-visible folder (relocatable
+//  in Settings). Gemma is loaded from that local folder — no network at load time.
 //
 
 import Foundation
@@ -21,6 +23,122 @@ import MLXVLM
 import MLXHuggingFace
 import HuggingFace
 import Tokenizers
+
+/// Which on-device runtime a Gemma variant runs on.
+enum GemmaRuntime: Equatable {
+    case mlx        // Apple MLX, loaded by MLXGemmaEngine (VLMModelFactory)
+    case litert     // Google LiteRT-LM (.litertlm), loaded by LiteRTGemmaEngine
+}
+
+/// The two interchangeable Gemma 4 automation models the user can pick between.
+///   • E4B — Apple MLX 4-bit VLM (the model ORB has always shipped).
+///   • E2B — the Gemma 4 E2B `.litertlm` Google ships in the AI Edge Gallery for
+///           mobile/edge, run via the LiteRT-LM runtime (~2.54 GB).
+/// E4B keeps the original on-disk folder/flag so existing installs aren't
+/// re-downloaded.
+enum GemmaVariant: String, CaseIterable, Identifiable, Codable {
+    case e4b
+    case e2b
+
+    var id: String { rawValue }
+
+    var runtime: GemmaRuntime {
+        switch self {
+        case .e4b: return .mlx
+        case .e2b: return .litert
+        }
+    }
+
+    /// Hugging Face repo the weights come from.
+    var repo: String {
+        switch self {
+        case .e4b: return "mlx-community/gemma-4-e4b-it-4bit"
+        case .e2b: return "litert-community/gemma-4-E2B-it-litert-lm"
+        }
+    }
+
+    /// When set, download only these exact files instead of the whole repo tree.
+    /// The `.litertlm` bundle is self-contained (weights + tokenizer + chat
+    /// template), so a single file is all LiteRT-LM needs.
+    var downloadFiles: [String]? {
+        switch self {
+        case .e4b: return nil                                   // whole repo tree
+        case .e2b: return ["gemma-4-E2B-it.litertlm"]
+        }
+    }
+
+    /// The model file the runtime loads, relative to the variant's folder.
+    /// MLX loads a directory, so it has none; LiteRT loads this single file.
+    var modelFileName: String? {
+        switch self {
+        case .e4b: return nil
+        case .e2b: return "gemma-4-E2B-it.litertlm"
+        }
+    }
+
+    /// A file whose presence (with the completion flag) means "installed".
+    var presenceSentinel: String {
+        switch self {
+        case .e4b: return "config.json"
+        case .e2b: return "gemma-4-E2B-it.litertlm"
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .e4b: return "Gemma 4 E4B"
+        case .e2b: return "Gemma 4 E2B"
+        }
+    }
+
+    /// Name with a runtime/format hint, as shown in lists.
+    var menuLabel: String {
+        switch self {
+        case .e4b: return "Gemma 4 E4B · 4-bit"
+        case .e2b: return "Gemma 4 E2B · LiteRT"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .e4b: return "VISION + INTENT · MLX"
+        case .e2b: return "VISION + INTENT · LiteRT-LM"
+        }
+    }
+
+    /// One-line note distinguishing the variants in pickers.
+    var blurb: String {
+        switch self {
+        case .e4b: return "Larger · most capable · Apple MLX"
+        case .e2b: return "Lighter · Google AI Edge Gallery model"
+        }
+    }
+
+    /// Approximate on-disk download size, for the pre-download label.
+    var approxSizeLabel: String {
+        switch self {
+        case .e4b: return "~5.2 GB"
+        case .e2b: return "~2.5 GB"
+        }
+    }
+
+    /// Folder under the models root. E4B keeps the legacy "gemma" folder so an
+    /// existing download isn't orphaned by this change.
+    var folderName: String {
+        switch self {
+        case .e4b: return "gemma"
+        case .e2b: return "gemma-e2b-litert"
+        }
+    }
+
+    /// UserDefaults flag marking a *completed* download for this variant.
+    fileprivate var completeKey: String {
+        switch self {
+        case .e4b: return "orb.gemma.complete"
+        case .e2b: return "orb.gemma-e2b-litert.complete"
+        }
+    }
+}
 
 @MainActor
 final class ModelManager: ObservableObject {
@@ -45,16 +163,28 @@ final class ModelManager: ObservableObject {
     }
 
     @Published private(set) var moonshine: Phase = .notDownloaded
-    @Published private(set) var gemma: Phase = .notDownloaded
 
-    /// Bytes downloaded / total, for human-readable labels.
+    /// Per-variant Gemma download phase and byte progress.
+    @Published private(set) var gemmaPhases: [GemmaVariant: Phase] = [:]
+    @Published private(set) var gemmaByteMaps: [GemmaVariant: (Int64, Int64)] = [:]
+
+    /// Which Gemma variant drives automation. Changing it drops any resident
+    /// container so the next load maps the newly-selected weights.
+    @Published var selectedGemma: GemmaVariant = .e4b {
+        didSet {
+            guard selectedGemma != oldValue else { return }
+            UserDefaults.standard.set(selectedGemma.rawValue, forKey: Self.selectedKey)
+            gemmaContainer = nil
+            loadedGemma = nil
+        }
+    }
+
+    /// Bytes downloaded / total for Moonshine, for human-readable labels.
     @Published private(set) var moonshineBytes: (Int64, Int64) = (0, 0)
-    @Published private(set) var gemmaBytes: (Int64, Int64) = (0, 0)
 
     // MARK: - Repos & file layout
 
     static let moonshineRepo = "onnx-community/moonshine-base-ONNX"
-    static let gemmaRepo     = "mlx-community/gemma-4-e4b-it-4bit"
 
     /// Files the Moonshine engine needs (HF path -> local filename).
     static let moonshineFiles: [(remote: String, local: String)] = [
@@ -67,7 +197,7 @@ final class ModelManager: ObservableObject {
     ]
 
     private static let folderKey = "orb.models.folder"
-    private static let gemmaCompleteKey = "orb.gemma.complete"
+    private static let selectedKey = "orb.gemma.selected"
 
     /// The default models root inside Application Support.
     var defaultModelsRoot: URL {
@@ -88,29 +218,51 @@ final class ModelManager: ObservableObject {
     }
 
     var moonshineDir: URL { modelsRoot.appendingPathComponent("moonshine", isDirectory: true) }
-    var gemmaDir: URL { modelsRoot.appendingPathComponent("gemma", isDirectory: true) }
+    func gemmaDir(_ v: GemmaVariant) -> URL { modelsRoot.appendingPathComponent(v.folderName, isDirectory: true) }
+    /// Folder of the model that currently drives automation.
+    var gemmaDir: URL { gemmaDir(selectedGemma) }
 
-    /// The loaded Gemma container, shared with the engine once downloaded.
+    /// The loaded Gemma container, shared with the engine once downloaded, plus
+    /// the variant it was loaded from (so a selection change re-maps the weights).
     private(set) var gemmaContainer: ModelContainer?
+    private var loadedGemma: GemmaVariant?
 
     private var moonshineTask: Task<Void, Never>?
-    private var gemmaTask: Task<Void, Never>?
+    private var gemmaTasks: [GemmaVariant: Task<Void, Never>] = [:]
     private var moonshineDownloader: ModelDownloader?
-    private var gemmaDownloader: ModelDownloader?
+    private var gemmaDownloaders: [GemmaVariant: ModelDownloader] = [:]
+
+    /// Phase/bytes of the active automation model (the selected variant).
+    var gemma: Phase { phase(for: selectedGemma) }
+    var gemmaBytes: (Int64, Int64) { bytes(for: selectedGemma) }
+
+    func phase(for v: GemmaVariant) -> Phase { gemmaPhases[v] ?? .notDownloaded }
+    func bytes(for v: GemmaVariant) -> (Int64, Int64) { gemmaByteMaps[v] ?? (0, 0) }
 
     var bothReady: Bool { moonshine.isReady && gemma.isReady }
+    /// At least one Gemma variant is installed (any can drive automation).
+    var anyGemmaReady: Bool { GemmaVariant.allCases.contains { phase(for: $0).isReady } }
 
     // MARK: - Lifecycle
 
-    init() { refresh() }
+    init() {
+        if let raw = UserDefaults.standard.string(forKey: Self.selectedKey),
+           let v = GemmaVariant(rawValue: raw) {
+            selectedGemma = v
+        }
+        refresh()
+    }
 
     /// Reconcile published state with what is already on disk, without clobbering
     /// an in-flight or paused download.
     func refresh() {
         moonshine = reconcile(moonshine, present: moonshineFilesPresent, dir: moonshineDir)
         if moonshine.isPaused, let st = loadResumeState(dir: moonshineDir) { moonshineBytes = st }
-        gemma = reconcile(gemma, present: gemmaFilesPresent, dir: gemmaDir)
-        if gemma.isPaused, let st = loadResumeState(dir: gemmaDir) { gemmaBytes = st }
+        for v in GemmaVariant.allCases {
+            let phase = reconcile(phase(for: v), present: gemmaFilesPresent(v), dir: gemmaDir(v))
+            gemmaPhases[v] = phase
+            if phase.isPaused, let st = loadResumeState(dir: gemmaDir(v)) { gemmaByteMaps[v] = st }
+        }
     }
 
     private func reconcile(_ phase: Phase, present: Bool, dir: URL) -> Phase {
@@ -137,11 +289,18 @@ final class ModelManager: ObservableObject {
     }
 
     /// Gemma counts as present only once a full download completed (flag) and the
-    /// config still sits in the current folder — so a partial/paused set or a
-    /// folder the user emptied is correctly treated as not-installed.
-    private var gemmaFilesPresent: Bool {
-        guard UserDefaults.standard.bool(forKey: Self.gemmaCompleteKey) else { return false }
-        return FileManager.default.fileExists(atPath: gemmaDir.appendingPathComponent("config.json").path)
+    /// variant's sentinel file still sits in the current folder — so a partial /
+    /// paused set or a folder the user emptied is correctly treated as not-installed.
+    private func gemmaFilesPresent(_ v: GemmaVariant) -> Bool {
+        guard UserDefaults.standard.bool(forKey: v.completeKey) else { return false }
+        return FileManager.default.fileExists(atPath: gemmaDir(v).appendingPathComponent(v.presenceSentinel).path)
+    }
+
+    /// On-disk URL of a LiteRT variant's `.litertlm` file (nil for MLX variants).
+    /// Used by `LiteRTGemmaEngine` to point the runtime at the model.
+    func gemmaModelFileURL(_ v: GemmaVariant) -> URL? {
+        guard let file = v.modelFileName else { return nil }
+        return gemmaDir(v).appendingPathComponent(file)
     }
 
     // MARK: - Download / pause / resume
@@ -163,26 +322,34 @@ final class ModelManager: ObservableObject {
         moonshineTask = Task { [weak self] in await self?.runMoonshine() }
     }
 
-    func downloadGemma() {
-        guard !gemma.isReady, !gemma.isDownloading else { return }
-        gemma = .downloading(gemma.fraction)
-        gemmaTask = Task { [weak self] in await self?.runGemma() }
+    // Convenience overloads operating on the active automation model.
+    func downloadGemma() { downloadGemma(selectedGemma) }
+    func pauseGemma()    { pauseGemma(selectedGemma) }
+    func resumeGemma()   { resumeGemma(selectedGemma) }
+
+    func downloadGemma(_ v: GemmaVariant) {
+        let p = phase(for: v)
+        guard !p.isReady, !p.isDownloading else { return }
+        gemmaPhases[v] = .downloading(p.fraction)
+        gemmaTasks[v] = Task { [weak self] in await self?.runGemma(v) }
     }
 
-    func pauseGemma() {
-        gemmaDownloader?.pause()
-        saveResumeState(dir: gemmaDir, bytes: gemmaBytes)
+    func pauseGemma(_ v: GemmaVariant) {
+        gemmaDownloaders[v]?.pause()
+        saveResumeState(dir: gemmaDir(v), bytes: bytes(for: v))
     }
 
-    func resumeGemma() {
-        guard gemma.isPaused else { downloadGemma(); return }
-        gemma = .downloading(gemma.fraction)
-        gemmaTask = Task { [weak self] in await self?.runGemma() }
+    func resumeGemma(_ v: GemmaVariant) {
+        guard phase(for: v).isPaused else { downloadGemma(v); return }
+        gemmaPhases[v] = .downloading(phase(for: v).fraction)
+        gemmaTasks[v] = Task { [weak self] in await self?.runGemma(v) }
     }
 
-    /// True while either model is actively transferring (used to decide whether the
+    /// True while any model is actively transferring (used to decide whether the
     /// app needs to capture resume state before quitting).
-    var hasActiveDownload: Bool { moonshine.isDownloading || gemma.isDownloading }
+    var hasActiveDownload: Bool {
+        moonshine.isDownloading || GemmaVariant.allCases.contains { phase(for: $0).isDownloading }
+    }
 
     /// Capture and persist resume state for any in-flight downloads so the next
     /// launch continues instead of restarting at byte 0. Call from the app's
@@ -192,9 +359,11 @@ final class ModelManager: ObservableObject {
             await dl.suspendForTermination()
             saveResumeState(dir: moonshineDir, bytes: moonshineBytes)
         }
-        if let dl = gemmaDownloader {
-            await dl.suspendForTermination()
-            saveResumeState(dir: gemmaDir, bytes: gemmaBytes)
+        for v in GemmaVariant.allCases {
+            if let dl = gemmaDownloaders[v] {
+                await dl.suspendForTermination()
+                saveResumeState(dir: gemmaDir(v), bytes: bytes(for: v))
+            }
         }
     }
 
@@ -215,20 +384,23 @@ final class ModelManager: ObservableObject {
         }
     }
 
-    private func runGemma() async {
+    private func runGemma(_ v: GemmaVariant) async {
         do {
-            let dl = try await gemmaDownloaderInstance()
+            let dl = try await gemmaDownloaderInstance(v)
             try await dl.run()
-            guard gemmaDownloader === dl else { return }
-            UserDefaults.standard.set(true, forKey: Self.gemmaCompleteKey)
-            clearResumeState(dir: gemmaDir)
-            gemma = .ready
-            gemmaBytes = (dl.grandTotal, dl.grandTotal)
-            gemmaDownloader = nil
+            guard gemmaDownloaders[v] === dl else { return }
+            UserDefaults.standard.set(true, forKey: v.completeKey)
+            clearResumeState(dir: gemmaDir(v))
+            gemmaPhases[v] = .ready
+            gemmaByteMaps[v] = (dl.grandTotal, dl.grandTotal)
+            gemmaDownloaders[v] = nil
+            // If nothing was usable for automation before, adopt the model the user
+            // just finished downloading so commands work without a manual switch.
+            if !phase(for: selectedGemma).isReady { selectedGemma = v }
         } catch is ModelDownloader.DownloadPaused {
-            if gemma.isDownloading { gemma = .paused(gemma.fraction) }
+            if phase(for: v).isDownloading { gemmaPhases[v] = .paused(phase(for: v).fraction) }
         } catch {
-            if gemma.isDownloading { gemma = .failed(friendly(error)) }
+            if phase(for: v).isDownloading { gemmaPhases[v] = .failed(friendly(error)) }
         }
     }
 
@@ -255,51 +427,67 @@ final class ModelManager: ObservableObject {
         return dl
     }
 
-    private func gemmaDownloaderInstance() async throws -> ModelDownloader {
-        if let dl = gemmaDownloader { return dl }
-        try FileManager.default.createDirectory(at: gemmaDir, withIntermediateDirectories: true)
-        let tree = try await fetchTree(repo: Self.gemmaRepo)
-        let excluded: Set<String> = [".gitattributes", "README.md", "LICENSE"]
-        let specs = tree
-            .filter { !excluded.contains($0.path) && !$0.path.hasSuffix(".md") }
-            .map { e in
-                ModelDownloader.FileSpec(
-                    remote: hfURL(Self.gemmaRepo, e.path),
-                    dest: gemmaDir.appendingPathComponent(e.path),
-                    size: e.size)
-            }
-        guard !specs.isEmpty else { throw ORBError.modelNotDownloaded("Gemma 4 E4B") }
+    private func gemmaDownloaderInstance(_ v: GemmaVariant) async throws -> ModelDownloader {
+        if let dl = gemmaDownloaders[v] { return dl }
+        let dir = gemmaDir(v)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let tree = try await fetchTree(repo: v.repo)
+        let sizes = Dictionary(tree.map { ($0.path, $0.size) }, uniquingKeysWith: { a, _ in a })
+        let paths: [String]
+        if let only = v.downloadFiles {
+            // Single-file (LiteRT) download: just the named file(s).
+            paths = only
+        } else {
+            // Whole repo tree, minus docs/metadata (MLX directory model).
+            let excluded: Set<String> = [".gitattributes", "README.md", "LICENSE"]
+            paths = tree.map(\.path).filter { !excluded.contains($0) && !$0.hasSuffix(".md") }
+        }
+        let specs = paths.map { path in
+            ModelDownloader.FileSpec(
+                remote: hfURL(v.repo, path),
+                dest: dir.appendingPathComponent(path),
+                size: sizes[path] ?? 0)
+        }
+        guard !specs.isEmpty else { throw ORBError.modelNotDownloaded(v.displayName) }
         let dl = ModelDownloader(files: specs)
         dl.onProgress = { [weak self] done, total in
             guard let self else { return }
-            self.gemmaBytes = (done, total)
-            if self.gemma.isDownloading {
-                self.gemma = .downloading(total > 0 ? Double(done) / Double(total) : 0)
+            self.gemmaByteMaps[v] = (done, total)
+            if self.phase(for: v).isDownloading {
+                self.gemmaPhases[v] = .downloading(total > 0 ? Double(done) / Double(total) : 0)
             }
         }
-        gemmaDownloader = dl
+        gemmaDownloaders[v] = dl
         return dl
     }
 
     // MARK: - Loading (no network)
 
-    /// Load the Gemma container from the local folder. Does **not** download —
-    /// throws if the model isn't installed yet.
+    /// Load the *selected* MLX Gemma container from its local folder. Does **not**
+    /// download — throws if that variant isn't installed yet. Re-maps when the
+    /// selection changed since the last load. Only valid for MLX variants; LiteRT
+    /// models are loaded by `LiteRTGemmaEngine` straight from their `.litertlm`.
     func loadGemmaContainer() async throws -> ModelContainer {
-        if let c = gemmaContainer { return c }
-        guard gemmaFilesPresent else { throw ORBError.modelNotDownloaded("Gemma 4 E4B") }
+        let v = selectedGemma
+        guard v.runtime == .mlx else { throw ORBError.modelNotDownloaded(v.displayName) }
+        if let c = gemmaContainer, loadedGemma == v { return c }
+        gemmaContainer = nil
+        loadedGemma = nil
+        guard gemmaFilesPresent(v) else { throw ORBError.modelNotDownloaded(v.displayName) }
         let container = try await VLMModelFactory.shared.loadContainer(
-            from: gemmaDir, using: #huggingFaceTokenizerLoader())
+            from: gemmaDir(v), using: #huggingFaceTokenizerLoader())
         gemmaContainer = container
-        gemma = .ready
+        loadedGemma = v
+        gemmaPhases[v] = .ready
         return container
     }
 
-    /// Drop the resident Gemma container to reclaim its (~4 GB) memory. The model
-    /// stays downloaded, so `gemma` remains `.ready`; the next `loadGemmaContainer`
+    /// Drop the resident Gemma container to reclaim its memory. The model stays
+    /// downloaded, so its phase remains `.ready`; the next `loadGemmaContainer`
     /// re-maps it from disk. Used by the engine's idle auto-unload.
     func releaseGemmaContainer() {
         gemmaContainer = nil
+        loadedGemma = nil
     }
 
     // MARK: - Hugging Face metadata
@@ -371,30 +559,37 @@ final class ModelManager: ObservableObject {
     /// Point the models root at a new folder (pass `nil` to reset to default).
     /// Cancels any in-flight downloads and re-checks what's present in the new spot.
     func setModelsFolder(_ url: URL?) {
-        moonshineTask?.cancel(); gemmaTask?.cancel()
-        moonshineDownloader?.invalidate(); gemmaDownloader?.invalidate()
-        moonshineDownloader = nil; gemmaDownloader = nil
-        gemmaContainer = nil
+        moonshineTask?.cancel()
+        gemmaTasks.values.forEach { $0.cancel() }; gemmaTasks.removeAll()
+        moonshineDownloader?.invalidate()
+        gemmaDownloaders.values.forEach { $0.invalidate() }; gemmaDownloaders.removeAll()
+        moonshineDownloader = nil
+        gemmaContainer = nil; loadedGemma = nil
         if let url { UserDefaults.standard.set(url.path, forKey: Self.folderKey) }
         else { UserDefaults.standard.removeObject(forKey: Self.folderKey) }
-        moonshine = .notDownloaded; gemma = .notDownloaded
-        moonshineBytes = (0, 0); gemmaBytes = (0, 0)
+        moonshine = .notDownloaded
+        gemmaPhases.removeAll(); gemmaByteMaps.removeAll()
+        moonshineBytes = (0, 0)
         refresh()
     }
 
     /// Delete every downloaded model and reset state (frees the whole folder).
     func deleteAllModels() {
-        moonshineTask?.cancel(); gemmaTask?.cancel()
-        moonshineDownloader?.invalidate(); gemmaDownloader?.invalidate()
-        moonshineDownloader = nil; gemmaDownloader = nil
-        gemmaContainer = nil
+        moonshineTask?.cancel()
+        gemmaTasks.values.forEach { $0.cancel() }; gemmaTasks.removeAll()
+        moonshineDownloader?.invalidate()
+        gemmaDownloaders.values.forEach { $0.invalidate() }; gemmaDownloaders.removeAll()
+        moonshineDownloader = nil
+        gemmaContainer = nil; loadedGemma = nil
         try? FileManager.default.removeItem(at: moonshineDir)
-        try? FileManager.default.removeItem(at: gemmaDir)
-        UserDefaults.standard.set(false, forKey: Self.gemmaCompleteKey)
+        for v in GemmaVariant.allCases {
+            try? FileManager.default.removeItem(at: gemmaDir(v))
+            UserDefaults.standard.set(false, forKey: v.completeKey)
+        }
         moonshine = .notDownloaded
-        gemma = .notDownloaded
+        gemmaPhases.removeAll()
+        gemmaByteMaps.removeAll()
         moonshineBytes = (0, 0)
-        gemmaBytes = (0, 0)
     }
 
     /// Recursively sum the byte size of a directory tree.

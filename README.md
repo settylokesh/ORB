@@ -127,6 +127,13 @@ touched at inference time.**
 |------|-------|-----------|---------|---------|
 | Speech-to-text | **Moonshine Base** | [`onnx-community/moonshine-base-ONNX`](https://huggingface.co/onnx-community/moonshine-base-ONNX) | ONNX Runtime | Streaming 16 kHz transcription with live partials |
 | Vision + intent | **Gemma 4 E4B** (4-bit) | [`mlx-community/gemma-4-e4b-it-4bit`](https://huggingface.co/mlx-community/gemma-4-e4b-it-4bit) | Apple MLX (VLM) | Reads the screen, extracts intent, plans & verifies actions |
+| Vision + intent (alt) | **Gemma 4 E2B** (`.litertlm`, ~2.5 GB) | [`litert-community/gemma-4-E2B-it-litert-lm`](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm) | Google LiteRT-LM | The lighter Edge Gallery model — same role as E4B, on the LiteRT runtime |
+
+The automation model is **selectable** (Onboarding / Settings → *Automation
+model*): the larger **E4B on Apple MLX**, or the lighter **E2B on LiteRT-LM** —
+the exact `gemma-4-E2B-it.litertlm` Google ships in the AI Edge Gallery. The
+LiteRT path activates once the [LiteRT-LM Swift package](https://github.com/google-ai-edge/LiteRT-LM)
+is added (see Setup); until then E2B is downloadable but runs via E4B.
 
 The dashboard reports each model's readiness, resident RAM, and live performance
 metrics (tokens/second for Gemma, milliseconds for Moonshine).
@@ -195,6 +202,7 @@ open:
 
 - [`mlx-swift-lm`](https://github.com/ml-explore/mlx-swift-lm) — MLX language/vision model runtime
 - [`onnxruntime-swift-package-manager`](https://github.com/microsoft/onnxruntime-swift-package-manager) — ONNX Runtime for Moonshine
+- [`LiteRT-LM`](https://github.com/google-ai-edge/LiteRT-LM) — *optional*; runs the Gemma 4 E2B `.litertlm` model. Add via **File ▸ Add Package Dependencies** to enable the E2B option (the app builds and runs without it).
 - [`swift-transformers`](https://github.com/huggingface/swift-transformers) — tokenizers & model utilities
 - [`swift-huggingface`](https://github.com/huggingface/swift-huggingface) — Hugging Face Hub integration
 

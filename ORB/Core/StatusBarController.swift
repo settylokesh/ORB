@@ -79,7 +79,7 @@ final class StatusBarController {
         menu.addItem(withTitle: "History", action: #selector(openHistory), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Settings", action: #selector(openSettings), keyEquivalent: ",").target = self
         menu.addItem(.separator())
-        let gemma = NSMenuItem(title: "Model: Gemma 4 E4B — \(Self.label(appState.models.gemma))", action: nil, keyEquivalent: "")
+        let gemma = NSMenuItem(title: "Model: \(appState.models.selectedGemma.displayName) — \(Self.label(appState.models.gemma))", action: nil, keyEquivalent: "")
         gemma.isEnabled = false
         menu.addItem(gemma)
         let stt = NSMenuItem(title: "STT: Moonshine — \(Self.label(appState.models.moonshine))", action: nil, keyEquivalent: "")

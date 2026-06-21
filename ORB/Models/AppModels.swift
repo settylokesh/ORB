@@ -88,6 +88,7 @@ enum ORBError: LocalizedError, Equatable {
     case accessibilityMissing
     case screenRecordingMissing
     case modelNotDownloaded(String)
+    case runtimeUnavailable(String)
     case appNotFound(String)
     case fileNotFound(String)
     case actionFailed(String)
@@ -101,6 +102,7 @@ enum ORBError: LocalizedError, Equatable {
         case .accessibilityMissing:    return "Accessibility permission is required to control your Mac."
         case .screenRecordingMissing:  return "Screen Recording is required so ORB can see the UI."
         case .modelNotDownloaded(let m): return "\(m) isn't downloaded yet."
+        case .runtimeUnavailable(let m): return m
         case .appNotFound(let a):      return "“\(a)” isn't installed on this Mac."
         case .fileNotFound(let f):     return "No file matches “\(f)”."
         case .actionFailed(let s):     return "Action failed: \(s)"
