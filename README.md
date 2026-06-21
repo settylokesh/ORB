@@ -131,9 +131,11 @@ touched at inference time.**
 
 The automation model is **selectable** (Onboarding / Settings → *Automation
 model*): the larger **E4B on Apple MLX**, or the lighter **E2B on LiteRT-LM** —
-the exact `gemma-4-E2B-it.litertlm` Google ships in the AI Edge Gallery. The
-LiteRT path activates once the [LiteRT-LM Swift package](https://github.com/google-ai-edge/LiteRT-LM)
-is added (see Setup); until then E2B is downloadable but runs via E4B.
+the exact `gemma-4-E2B-it.litertlm` Google ships in the AI Edge Gallery. Both run
+out of the box: the [LiteRT-LM runtime](https://github.com/google-ai-edge/LiteRT-LM)
+is vendored as a local Swift package (`ThirdParty/LiteRTLM`), and its macOS
+xcframework downloads automatically on first build — no manual setup. Pick E2B,
+download the model, and it runs.
 
 The dashboard reports each model's readiness, resident RAM, and live performance
 metrics (tokens/second for Gemma, milliseconds for Moonshine).
@@ -202,7 +204,7 @@ open:
 
 - [`mlx-swift-lm`](https://github.com/ml-explore/mlx-swift-lm) — MLX language/vision model runtime
 - [`onnxruntime-swift-package-manager`](https://github.com/microsoft/onnxruntime-swift-package-manager) — ONNX Runtime for Moonshine
-- [`LiteRT-LM`](https://github.com/google-ai-edge/LiteRT-LM) — *optional*; runs the Gemma 4 E2B `.litertlm` model. Add via **File ▸ Add Package Dependencies** to enable the E2B option (the app builds and runs without it).
+- [`LiteRT-LM`](https://github.com/google-ai-edge/LiteRT-LM) — runs the Gemma 4 E2B `.litertlm` model. Vendored as a local package at `ThirdParty/LiteRTLM`; its macOS xcframework (~43 MB) downloads automatically on first build. No manual setup.
 - [`swift-transformers`](https://github.com/huggingface/swift-transformers) — tokenizers & model utilities
 - [`swift-huggingface`](https://github.com/huggingface/swift-huggingface) — Hugging Face Hub integration
 

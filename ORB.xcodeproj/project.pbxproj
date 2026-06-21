@@ -13,6 +13,7 @@
 		AD50000000000000000000AA /* MLXHuggingFace in Frameworks */ = {isa = PBXBuildFile; productRef = AC50000000000000000000AA /* MLXHuggingFace */; };
 		AD60000000000000000000AA /* HuggingFace in Frameworks */ = {isa = PBXBuildFile; productRef = AC60000000000000000000AA /* HuggingFace */; };
 		AD70000000000000000000AA /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = AC70000000000000000000AA /* Tokenizers */; };
+		AD80000000000000000000AA /* LiteRTLM in Frameworks */ = {isa = PBXBuildFile; productRef = AC80000000000000000000AA /* LiteRTLM */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -38,6 +39,7 @@
 				AD50000000000000000000AA /* MLXHuggingFace in Frameworks */,
 				AD60000000000000000000AA /* HuggingFace in Frameworks */,
 				AD70000000000000000000AA /* Tokenizers in Frameworks */,
+				AD80000000000000000000AA /* LiteRTLM in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -86,6 +88,7 @@
 				AC50000000000000000000AA /* MLXHuggingFace */,
 				AC60000000000000000000AA /* HuggingFace */,
 				AC70000000000000000000AA /* Tokenizers */,
+				AC80000000000000000000AA /* LiteRTLM */,
 			);
 			productName = ORB;
 			productReference = 7A9876D32FE4BEBB00BBD6E9 /* ORB.app */;
@@ -120,6 +123,7 @@
 				AB20000000000000000000AA /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */,
 				AB30000000000000000000AA /* XCRemoteSwiftPackageReference "swift-huggingface" */,
 				AB40000000000000000000AA /* XCRemoteSwiftPackageReference "swift-transformers" */,
+				AB50000000000000000000AA /* XCLocalSwiftPackageReference "ThirdParty/LiteRTLM" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7A9876D42FE4BEBB00BBD6E9 /* Products */;
@@ -398,6 +402,13 @@
 		};
 /* End XCRemoteSwiftPackageReference section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		AB50000000000000000000AA /* XCLocalSwiftPackageReference "ThirdParty/LiteRTLM" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ThirdParty/LiteRTLM;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		AC20000000000000000000AA /* MLXVLM */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -428,6 +439,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AB40000000000000000000AA /* XCRemoteSwiftPackageReference "swift-transformers" */;
 			productName = Tokenizers;
+		};
+		AC80000000000000000000AA /* LiteRTLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LiteRTLM;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

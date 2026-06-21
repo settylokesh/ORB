@@ -34,3 +34,6 @@ playground.xcworkspace
 
 # ──────────────────────── Claude Code ─────────────────────────────
 .claude/
+
+# Vendored local packages: ignore per-user Xcode state
+ThirdParty/**/.swiftpm/

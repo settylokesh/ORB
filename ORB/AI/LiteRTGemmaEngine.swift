@@ -8,16 +8,16 @@
 //  asks the model for the same structured JSON action plan as the MLX engine, so
 //  the rest of the pipeline (parsing, execution, verification) is unchanged.
 //
-//  The LiteRT-LM Swift package (https://github.com/google-ai-edge/LiteRT-LM) is
-//  an optional dependency: everything that touches it is gated behind
-//  `#if canImport(LiteRTLM)`, so the app keeps building (and the `.litertlm` keeps
-//  downloading) before the package is added in Xcode. Until then this engine is an
-//  inert stub that asks the user to add the package. Once the package resolves,
-//  selecting "Gemma 4 E2B" runs everything through LiteRT-LM.
+//  LiteRT-LM ships as a LOCAL Swift package vendored at ThirdParty/LiteRTLM (its
+//  required `-all_load` unsafe linker flag makes Xcode reject it as a *remote*
+//  SwiftPM product — a local package is exempt). The macOS xcframework still
+//  downloads automatically from the GitHub release on first resolve, so a fresh
+//  clone needs no setup. Calls are still wrapped in `#if canImport(LiteRTLM)` as a
+//  belt-and-braces guard; in practice the module is always present.
 //
-//  NOTE: the LiteRT-LM Swift API is an early preview; the exact initializer labels
-//  / method names below mirror the published Swift guide and may need a small
-//  adjustment when first compiled against the resolved package.
+//  `Engine` is a Swift `actor`, so `initialize()` / `createConversation()` are
+//  awaited cross-actor and run on a background executor — heavy model loading and
+//  inference never block the main thread.
 //
 
 import Foundation
@@ -79,8 +79,10 @@ final class LiteRTGemmaEngine: LLMEngine {
             throw ORBError.modelNotDownloaded(displayName)
         }
         let before = ProcessRAM.residentMB()
-        // GPU (Metal) for the language model, CPU for the vision encoder — the
-        // configuration LiteRT-LM recommends for Apple silicon.
+        // `Engine` is an actor, so initialize() runs on the actor's own (background)
+        // executor — awaiting it here maps and prepares ~2.5 GB of weights without
+        // blocking the main thread. GPU (Metal) runs the language model, CPU the
+        // vision encoder — LiteRT-LM's recommended Apple-silicon mix.
         let config = try EngineConfig(modelPath: url.path,
                                       backend: .gpu,
                                       visionBackend: .cpu(),
